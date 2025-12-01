@@ -1,6 +1,6 @@
 {
     "num_gpus": 0,
-    "batch_size": 4,
+    "batch_size": 64,
     "learning_rate": 0.0005,
     "adam_b1": 0.8,
     "adam_b2": 0.99,
@@ -9,6 +9,10 @@
     
     "dense_channel": 64,
     "compress_factor": 0.3, 
+    "multiscale_discriminator": true,
+    "use_ssl_loss": true,
+    "ssl_model_name_prev": "nvidia/ssl_en_nest_xlarge_v1.0",
+    "ssl_model_name": "facebook/hubert-base-ls960",
     "num_tsconformers": 4,
     "beta": 2.0,
 
@@ -22,7 +26,7 @@
 
     "dist_config": {
         "dist_backend": "nccl",
-        "dist_url": "tcp://localhost:54321",
+        "dist_url": "tcp://localhost:29500",
         "world_size": 1
     }
 }

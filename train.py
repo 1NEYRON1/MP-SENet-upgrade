@@ -16,7 +16,8 @@ from torch.nn.parallel import DistributedDataParallel
 from env import AttrDict, build_env
 from dataset import Dataset, mag_pha_stft, mag_pha_istft, get_dataset_filelist
 from models.model import MPNet, pesq_score, phase_losses
-from models.discriminator import MetricDiscriminator, batch_pesq
+from models.discriminator import MetricDiscriminator, batch_pesq, MultiScaleDiscriminator
+from models.ssl_loss import SSLLoss
 from utils import scan_checkpoint, load_checkpoint, save_checkpoint
 
 torch.backends.cudnn.benchmark = True
@@ -30,7 +31,16 @@ def train(rank, a, h):
     device = torch.device('cuda:{:d}'.format(rank))
 
     generator = MPNet(h).to(device)
-    discriminator = MetricDiscriminator().to(device)
+    if h.multiscale_discriminator:
+        discriminator = MultiScaleDiscriminator(compress_factor=h.compress_factor).to(device)
+    else:
+        discriminator = MetricDiscriminator().to(device)
+
+    if hasattr(h, 'use_ssl_loss') and h.use_ssl_loss:
+        print(f"Initializing SSL Loss with model: {h.ssl_model_name}")
+        ssl_loss_module = SSLLoss(model_name=h.ssl_model_name, device=device).to(device)
+    else:
+        ssl_loss_module = None
 
     if rank == 0:
         print(generator)
@@ -131,15 +141,29 @@ def train(rank, a, h):
 
             # Discriminator
             optim_d.zero_grad()
-            metric_r = discriminator(clean_mag, clean_mag)
-            metric_g = discriminator(clean_mag, mag_g_hat.detach())
-            loss_disc_r = F.mse_loss(one_labels, metric_r.flatten())
-            
-            if batch_pesq_score is not None:
-                loss_disc_g = F.mse_loss(batch_pesq_score.to(device), metric_g.flatten())
+            if h.multiscale_discriminator:
+                metric_rs, metric_gs = discriminator(clean_audio, audio_g.detach())
+                loss_disc_r = 0
+                for metric_r in metric_rs:
+                    loss_disc_r += F.mse_loss(one_labels, metric_r.flatten())
+                
+                if batch_pesq_score is not None:
+                    loss_disc_g = 0
+                    for metric_g in metric_gs:
+                        loss_disc_g += F.mse_loss(batch_pesq_score.to(device), metric_g.flatten())
+                else:
+                    print('pesq is None!')
+                    loss_disc_g = 0
             else:
-                print('pesq is None!')
-                loss_disc_g = 0
+                metric_r = discriminator(clean_mag, clean_mag)
+                metric_g = discriminator(clean_mag, mag_g_hat.detach())
+                loss_disc_r = F.mse_loss(one_labels, metric_r.flatten())
+                
+                if batch_pesq_score is not None:
+                    loss_disc_g = F.mse_loss(batch_pesq_score.to(device), metric_g.flatten())
+                else:
+                    print('pesq is None!')
+                    loss_disc_g = 0
             
             loss_disc_all = loss_disc_r + loss_disc_g
             loss_disc_all.backward()
@@ -175,10 +199,20 @@ def train(rank, a, h):
             # Time Loss
             loss_time = F.l1_loss(clean_audio, audio_g)
             # Metric Loss
-            metric_g = discriminator(clean_mag, mag_g_hat)
-            loss_metric = F.mse_loss(metric_g.flatten(), one_labels)
+            if h.multiscale_discriminator:
+                 _, metric_gs = discriminator(clean_audio, audio_g)
+                 loss_metric = 0
+                 for metric_g in metric_gs:
+                     loss_metric += F.mse_loss(metric_g.flatten(), one_labels)
+            else:
+                metric_g = discriminator(clean_mag, mag_g_hat)
+                loss_metric = F.mse_loss(metric_g.flatten(), one_labels)
 
-            loss_gen_all = loss_mag * 0.9 + loss_pha * 0.3  + loss_com * 0.1 + loss_stft * 0.1 + loss_metric * 0.05 + loss_time * 0.2
+            loss_ssl = 0
+            if ssl_loss_module is not None:
+                loss_ssl = ssl_loss_module(clean_audio, audio_g)
+
+            loss_gen_all = loss_mag * 0.9 + loss_pha * 0.3  + loss_com * 0.1 + loss_stft * 0.1 + loss_metric * 0.2 + loss_time * 0.2 + loss_ssl * 0.2
 
             loss_gen_all.backward()
             optim_g.step()
@@ -187,15 +221,24 @@ def train(rank, a, h):
                 # STDOUT logging
                 if steps % a.stdout_interval == 0:
                     with torch.no_grad():
-                        metric_error = F.mse_loss(metric_g.flatten(), one_labels).item()
+                        if h.multiscale_discriminator:
+                            metric_error = 0
+                            for metric_g in metric_gs:
+                                metric_error += F.mse_loss(metric_g.flatten(), one_labels).item()
+                        else:
+                            metric_error = F.mse_loss(metric_g.flatten(), one_labels).item()
+
                         mag_error = F.mse_loss(clean_mag, mag_g).item()
                         ip_error, gd_error, iaf_error = phase_losses(clean_pha, pha_g)
                         pha_error = (ip_error + gd_error + iaf_error).item()
                         com_error = F.mse_loss(clean_com, com_g).item()
                         time_error = F.l1_loss(clean_audio, audio_g).item()
                         stft_error = F.mse_loss(com_g, com_g_hat).item()
-                    print('Steps : {:d}, Gen Loss: {:4.3f}, Disc Loss: {:4.3f}, Metric loss: {:4.3f}, Magnitude Loss : {:4.3f}, Phase Loss : {:4.3f}, Complex Loss : {:4.3f}, Time Loss : {:4.3f}, STFT Loss : {:4.3f}, s/b : {:4.3f}'.
-                           format(steps, loss_gen_all, loss_disc_all, metric_error, mag_error, pha_error, com_error, time_error, stft_error, time.time() - start_b))
+                        
+                        ssl_error = loss_ssl.item() if isinstance(loss_ssl, torch.Tensor) else loss_ssl
+                        
+                    print('Steps : {:d}, Gen Loss: {:4.3f}, Disc Loss: {:4.3f}, Metric loss: {:4.3f}, Magnitude Loss : {:4.3f}, Phase Loss : {:4.3f}, Complex Loss : {:4.3f}, Time Loss : {:4.3f}, STFT Loss : {:4.3f}, SSL Loss: {:4.3f}, s/b : {:4.3f}'.
+                           format(steps, loss_gen_all, loss_disc_all, metric_error, mag_error, pha_error, com_error, time_error, stft_error, ssl_error, time.time() - start_b))
 
                 # checkpointing
                 if steps % a.checkpoint_interval == 0 and steps != 0:
@@ -218,6 +261,7 @@ def train(rank, a, h):
                     sw.add_scalar("Training/Complex Loss", com_error, steps)
                     sw.add_scalar("Training/Time Loss", time_error, steps)
                     sw.add_scalar("Training/Consistency Loss", stft_error, steps)
+                    sw.add_scalar("Training/SSL Loss", ssl_error, steps)
 
                 # Validation
                 if steps % a.validation_interval == 0 and steps != 0:

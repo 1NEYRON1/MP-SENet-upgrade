@@ -28,7 +28,7 @@ class TransformerBlock(nn.Module):
         super(TransformerBlock, self).__init__()
 
         self.norm1 = LayerNorm(d_model)
-        self.attention = MultiheadAttention(d_model, n_heads, dropout=dropout)
+        self.attention = MultiheadAttention(d_model, n_heads, dropout=dropout, batch_first=True)
         self.dropout1 = Dropout(dropout)
         
         self.norm2 = LayerNorm(d_model)

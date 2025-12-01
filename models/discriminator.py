@@ -8,6 +8,7 @@ from pesq import pesq
 from torch.nn.utils import spectral_norm
 from joblib import Parallel, delayed
 from utils import *
+from dataset import mag_pha_stft
 
 
 def cal_pesq(clean, noisy, sr=16000):
@@ -65,3 +66,30 @@ class MetricDiscriminator(nn.Module):
     def forward(self, x, y):
         xy = torch.stack((x, y), dim=1)
         return self.layers(xy)
+
+
+class MultiScaleDiscriminator(nn.Module):
+    def __init__(self, resolutions=[[400, 100, 400], [1024, 120, 600], [256, 50, 120]], compress_factor=0.3):
+    
+        super(MultiScaleDiscriminator, self).__init__()
+        self.discriminators = nn.ModuleList([
+            MetricDiscriminator() for _ in resolutions
+        ])
+        self.resolutions = resolutions
+        self.compress_factor = compress_factor
+        
+    def forward(self, clean_wav, gen_wav):
+        metric_rs = []
+        metric_gs = []
+        
+        for i, (n_fft, hop, win) in enumerate(self.resolutions):
+            clean_mag, _, _ = mag_pha_stft(clean_wav, n_fft, hop, win, compress_factor=self.compress_factor)
+            gen_mag, _, _ = mag_pha_stft(gen_wav, n_fft, hop, win, compress_factor=self.compress_factor)
+            
+            metric_r = self.discriminators[i](clean_mag, clean_mag)
+            metric_g = self.discriminators[i](clean_mag, gen_mag)
+            
+            metric_rs.append(metric_r)
+            metric_gs.append(metric_g)
+            
+        return metric_rs, metric_gs
