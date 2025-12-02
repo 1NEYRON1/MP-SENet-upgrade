@@ -1,6 +1,6 @@
 {
     "num_gpus": 0,
-    "batch_size": 64,
+    "batch_size": 24,
     "learning_rate": 0.0005,
     "adam_b1": 0.8,
     "adam_b2": 0.99,
@@ -26,7 +26,8 @@
 
     "dist_config": {
         "dist_backend": "nccl",
-        "dist_url": "tcp://localhost:29500",
+        "dist_url_prev": "tcp://localhost:29500",
+        "dist_url": "tcp://localhost:54321",
         "world_size": 1
     }
 }
