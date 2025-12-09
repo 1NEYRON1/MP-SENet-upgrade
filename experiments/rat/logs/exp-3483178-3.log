@@ -1,0 +1,1062 @@
+==========================================
+Job ID: 3483182
+Array Task ID: 3
+Node: cn-006
+GPU: 0
+Date: Mon Dec  8 10:04:20 MSK 2025
+==========================================
+Model: gtcrn_rat --chunk_size 16
+==========================================
+============================================================
+Experiment: gtcrn_rat/chunk_16
+Device: cuda
+Parameters: 24,757
+Epochs: 100, Batch size: 4, LR: 0.001
+Save dir: checkpoints/gtcrn_rat/chunk_16
+============================================================
+
+Loading datasets...
+Loaded 11572 files from data/training.txt
+Loaded 824 files from data/test.txt
+Train: 11572, Val: 824
+Using GPU: Tesla V100-SXM2-32GB
+
+            Epoch 1: 
+            loss=5.6210/1.1320
+            sisnr=6.54/16.57
+            pesq="N/A"/2.533
+            mag=0.0243/0.0122
+            re=0.0788/0.0347
+            im=0.0736/0.0298
+            lr=0.001000
+            
+  -> Saved best model to checkpoints/gtcrn_rat/chunk_16/best.pt
+
+            Epoch 2: 
+            loss=3.2455/0.7925
+            sisnr=12.52/17.78
+            pesq="N/A"/2.519
+            mag=0.0185/0.0094
+            re=0.0555/0.0341
+            im=0.0512/0.0296
+            lr=0.001000
+            
+  -> Saved best model to checkpoints/gtcrn_rat/chunk_16/best.pt
+
+            Epoch 3: 
+            loss=3.0128/0.7124
+            sisnr=13.00/18.04
+            pesq="N/A"/2.675
+            mag=0.0171/0.0093
+            re=0.0540/0.0333
+            im=0.0498/0.0288
+            lr=0.001000
+            
+  -> Saved best model to checkpoints/gtcrn_rat/chunk_16/best.pt
+
+            Epoch 4: 
+            loss=2.8846/0.7063
+            sisnr=13.25/18.07
+            pesq="N/A"/2.593
+            mag=0.0164/0.0083
+            re=0.0531/0.0346
+            im=0.0490/0.0299
+            lr=0.001000
+            
+  -> Saved best model to checkpoints/gtcrn_rat/chunk_16/best.pt
+
+            Epoch 5: 
+            loss=2.8121/0.6335
+            sisnr=13.37/18.33
+            pesq="N/A"/2.699
+            mag=0.0159/0.0087
+            re=0.0527/0.0333
+            im=0.0486/0.0287
+            lr=0.001000
+            
+  -> Saved best model to checkpoints/gtcrn_rat/chunk_16/best.pt
+
+            Epoch 6: 
+            loss=2.7870/0.6042
+            sisnr=13.47/18.40
+            pesq="N/A"/2.687
+            mag=0.0157/0.0084
+            re=0.0526/0.0332
+            im=0.0485/0.0287
+            lr=0.001000
+            
+  -> Saved best model to checkpoints/gtcrn_rat/chunk_16/best.pt
+
+            Epoch 7: 
+            loss=2.7177/0.6474
+            sisnr=13.56/18.42
+            pesq="N/A"/2.615
+            mag=0.0153/0.0076
+            re=0.0520/0.0349
+            im=0.0480/0.0303
+            lr=0.001000
+            
+
+            Epoch 8: 
+            loss=2.6879/0.6729
+            sisnr=13.63/18.35
+            pesq="N/A"/2.615
+            mag=0.0151/0.0084
+            re=0.0519/0.0343
+            im=0.0478/0.0297
+            lr=0.001000
+            
+
+            Epoch 9: 
+            loss=2.6611/0.6034
+            sisnr=13.69/18.28
+            pesq="N/A"/2.662
+            mag=0.0150/0.0079
+            re=0.0517/0.0336
+            im=0.0477/0.0289
+            lr=0.001000
+            
+  -> Saved best model to checkpoints/gtcrn_rat/chunk_16/best.pt
+
+            Epoch 10: 
+            loss=2.6355/0.5587
+            sisnr=13.74/18.42
+            pesq="N/A"/2.734
+            mag=0.0148/0.0081
+            re=0.0516/0.0329
+            im=0.0475/0.0283
+            lr=0.001000
+            
+  -> Saved best model to checkpoints/gtcrn_rat/chunk_16/best.pt
+  -> Saved checkpoint to checkpoints/gtcrn_rat/chunk_16/epoch_10.pt
+
+            Epoch 11: 
+            loss=2.6072/0.6838
+            sisnr=13.81/18.04
+            pesq="N/A"/2.723
+            mag=0.0146/0.0086
+            re=0.0514/0.0340
+            im=0.0474/0.0289
+            lr=0.001000
+            
+
+            Epoch 12: 
+            loss=2.6008/0.5878
+            sisnr=13.83/18.50
+            pesq="N/A"/2.684
+            mag=0.0146/0.0084
+            re=0.0514/0.0331
+            im=0.0474/0.0286
+            lr=0.001000
+            
+
+            Epoch 13: 
+            loss=2.5806/0.5692
+            sisnr=13.89/18.57
+            pesq="N/A"/2.706
+            mag=0.0145/0.0089
+            re=0.0513/0.0324
+            im=0.0472/0.0279
+            lr=0.001000
+            
+
+            Epoch 14: 
+            loss=2.5683/0.5611
+            sisnr=13.92/18.44
+            pesq="N/A"/2.752
+            mag=0.0144/0.0083
+            re=0.0512/0.0327
+            im=0.0471/0.0281
+            lr=0.001000
+            
+
+            Epoch 15: 
+            loss=2.5385/0.5625
+            sisnr=13.98/18.61
+            pesq="N/A"/2.656
+            mag=0.0143/0.0078
+            re=0.0510/0.0336
+            im=0.0470/0.0289
+            lr=0.001000
+            
+
+            Epoch 16: 
+            loss=2.5378/0.5364
+            sisnr=13.99/18.61
+            pesq="N/A"/2.740
+            mag=0.0142/0.0079
+            re=0.0510/0.0330
+            im=0.0470/0.0284
+            lr=0.001000
+            
+  -> Saved best model to checkpoints/gtcrn_rat/chunk_16/best.pt
+
+            Epoch 17: 
+            loss=2.5192/0.5419
+            sisnr=14.03/18.53
+            pesq="N/A"/2.752
+            mag=0.0142/0.0088
+            re=0.0509/0.0320
+            im=0.0468/0.0274
+            lr=0.001000
+            
+
+            Epoch 18: 
+            loss=2.4997/0.5396
+            sisnr=14.07/18.59
+            pesq="N/A"/2.723
+            mag=0.0140/0.0080
+            re=0.0507/0.0329
+            im=0.0467/0.0283
+            lr=0.001000
+            
+
+            Epoch 19: 
+            loss=2.4981/0.5251
+            sisnr=14.08/18.77
+            pesq="N/A"/2.719
+            mag=0.0141/0.0082
+            re=0.0507/0.0327
+            im=0.0467/0.0282
+            lr=0.001000
+            
+  -> Saved best model to checkpoints/gtcrn_rat/chunk_16/best.pt
+
+            Epoch 20: 
+            loss=2.5059/0.5233
+            sisnr=14.06/18.65
+            pesq="N/A"/2.743
+            mag=0.0141/0.0080
+            re=0.0508/0.0326
+            im=0.0468/0.0282
+            lr=0.001000
+            
+  -> Saved best model to checkpoints/gtcrn_rat/chunk_16/best.pt
+  -> Saved checkpoint to checkpoints/gtcrn_rat/chunk_16/epoch_20.pt
+
+            Epoch 21: 
+            loss=2.4909/0.5145
+            sisnr=14.10/18.71
+            pesq="N/A"/2.683
+            mag=0.0140/0.0080
+            re=0.0507/0.0327
+            im=0.0466/0.0282
+            lr=0.001000
+            
+  -> Saved best model to checkpoints/gtcrn_rat/chunk_16/best.pt
+
+            Epoch 22: 
+            loss=2.4749/0.4922
+            sisnr=14.15/18.77
+            pesq="N/A"/2.749
+            mag=0.0139/0.0076
+            re=0.0506/0.0329
+            im=0.0466/0.0284
+            lr=0.001000
+            
+  -> Saved best model to checkpoints/gtcrn_rat/chunk_16/best.pt
+
+            Epoch 23: 
+            loss=2.4748/0.5803
+            sisnr=14.12/18.59
+            pesq="N/A"/2.775
+            mag=0.0139/0.0091
+            re=0.0506/0.0324
+            im=0.0465/0.0278
+            lr=0.001000
+            
+
+            Epoch 24: 
+            loss=2.4655/0.5354
+            sisnr=14.16/18.70
+            pesq="N/A"/2.764
+            mag=0.0138/0.0077
+            re=0.0506/0.0334
+            im=0.0465/0.0288
+            lr=0.001000
+            
+
+            Epoch 25: 
+            loss=2.4422/0.4847
+            sisnr=14.19/18.84
+            pesq="N/A"/2.711
+            mag=0.0137/0.0078
+            re=0.0504/0.0326
+            im=0.0464/0.0281
+            lr=0.001000
+            
+  -> Saved best model to checkpoints/gtcrn_rat/chunk_16/best.pt
+
+            Epoch 26: 
+            loss=2.4567/0.4977
+            sisnr=14.17/18.70
+            pesq="N/A"/2.769
+            mag=0.0138/0.0080
+            re=0.0505/0.0325
+            im=0.0464/0.0278
+            lr=0.001000
+            
+
+            Epoch 27: 
+            loss=2.4389/0.5158
+            sisnr=14.20/18.75
+            pesq="N/A"/2.763
+            mag=0.0137/0.0076
+            re=0.0503/0.0333
+            im=0.0463/0.0286
+            lr=0.001000
+            
+
+            Epoch 28: 
+            loss=2.4292/0.4913
+            sisnr=14.22/18.80
+            pesq="N/A"/2.714
+            mag=0.0136/0.0080
+            re=0.0503/0.0323
+            im=0.0462/0.0280
+            lr=0.001000
+            
+
+            Epoch 29: 
+            loss=2.4318/0.5037
+            sisnr=14.22/18.67
+            pesq="N/A"/2.745
+            mag=0.0137/0.0078
+            re=0.0503/0.0327
+            im=0.0463/0.0281
+            lr=0.001000
+            
+
+            Epoch 30: 
+            loss=2.5081/0.6878
+            sisnr=14.05/18.21
+            pesq="N/A"/2.664
+            mag=0.0140/0.0088
+            re=0.0510/0.0341
+            im=0.0469/0.0291
+            lr=0.001000
+            
+  -> Saved checkpoint to checkpoints/gtcrn_rat/chunk_16/epoch_30.pt
+
+            Epoch 31: 
+            loss=2.5042/0.5015
+            sisnr=14.01/18.82
+            pesq="N/A"/2.765
+            mag=0.0139/0.0077
+            re=0.0509/0.0330
+            im=0.0468/0.0284
+            lr=0.000500
+            
+
+            Epoch 32: 
+            loss=2.3866/0.4745
+            sisnr=14.29/18.72
+            pesq="N/A"/2.787
+            mag=0.0134/0.0076
+            re=0.0499/0.0326
+            im=0.0459/0.0279
+            lr=0.000500
+            
+  -> Saved best model to checkpoints/gtcrn_rat/chunk_16/best.pt
+
+            Epoch 33: 
+            loss=2.3767/0.4893
+            sisnr=14.29/18.81
+            pesq="N/A"/2.738
+            mag=0.0134/0.0078
+            re=0.0498/0.0327
+            im=0.0458/0.0281
+            lr=0.000500
+            
+
+            Epoch 34: 
+            loss=2.3788/0.4922
+            sisnr=14.31/18.81
+            pesq="N/A"/2.701
+            mag=0.0134/0.0078
+            re=0.0499/0.0326
+            im=0.0459/0.0282
+            lr=0.000500
+            
+
+            Epoch 35: 
+            loss=2.3708/0.4851
+            sisnr=14.32/18.72
+            pesq="N/A"/2.756
+            mag=0.0133/0.0075
+            re=0.0498/0.0328
+            im=0.0458/0.0282
+            lr=0.000500
+            
+
+            Epoch 36: 
+            loss=2.3548/0.4752
+            sisnr=14.36/18.78
+            pesq="N/A"/2.755
+            mag=0.0133/0.0079
+            re=0.0497/0.0323
+            im=0.0457/0.0277
+            lr=0.000500
+            
+
+            Epoch 37: 
+            loss=2.3670/0.4865
+            sisnr=14.35/18.78
+            pesq="N/A"/2.753
+            mag=0.0133/0.0079
+            re=0.0498/0.0325
+            im=0.0459/0.0279
+            lr=0.000500
+            
+
+            Epoch 38: 
+            loss=2.3605/0.4648
+            sisnr=14.37/18.86
+            pesq="N/A"/2.738
+            mag=0.0133/0.0077
+            re=0.0498/0.0325
+            im=0.0458/0.0280
+            lr=0.000500
+            
+  -> Saved best model to checkpoints/gtcrn_rat/chunk_16/best.pt
+
+            Epoch 39: 
+            loss=2.3557/0.4622
+            sisnr=14.36/18.86
+            pesq="N/A"/2.752
+            mag=0.0133/0.0078
+            re=0.0497/0.0322
+            im=0.0457/0.0278
+            lr=0.000500
+            
+  -> Saved best model to checkpoints/gtcrn_rat/chunk_16/best.pt
+
+            Epoch 40: 
+            loss=2.3532/0.4629
+            sisnr=14.38/18.84
+            pesq="N/A"/2.755
+            mag=0.0133/0.0074
+            re=0.0497/0.0328
+            im=0.0457/0.0282
+            lr=0.000500
+            
+  -> Saved checkpoint to checkpoints/gtcrn_rat/chunk_16/epoch_40.pt
+
+            Epoch 41: 
+            loss=2.3518/0.4729
+            sisnr=14.37/18.75
+            pesq="N/A"/2.786
+            mag=0.0132/0.0074
+            re=0.0497/0.0328
+            im=0.0457/0.0282
+            lr=0.000500
+            
+
+            Epoch 42: 
+            loss=2.3475/0.4697
+            sisnr=14.38/18.75
+            pesq="N/A"/2.809
+            mag=0.0132/0.0078
+            re=0.0497/0.0322
+            im=0.0457/0.0276
+            lr=0.000500
+            
+
+            Epoch 43: 
+            loss=2.3502/0.4439
+            sisnr=14.36/18.86
+            pesq="N/A"/2.775
+            mag=0.0132/0.0076
+            re=0.0497/0.0322
+            im=0.0457/0.0277
+            lr=0.000500
+            
+  -> Saved best model to checkpoints/gtcrn_rat/chunk_16/best.pt
+
+            Epoch 44: 
+            loss=2.3443/0.4822
+            sisnr=14.39/18.78
+            pesq="N/A"/2.756
+            mag=0.0132/0.0078
+            re=0.0497/0.0326
+            im=0.0457/0.0280
+            lr=0.000500
+            
+
+            Epoch 45: 
+            loss=2.3451/0.4648
+            sisnr=14.38/18.86
+            pesq="N/A"/2.737
+            mag=0.0132/0.0074
+            re=0.0497/0.0328
+            im=0.0457/0.0282
+            lr=0.000500
+            
+
+            Epoch 46: 
+            loss=2.3436/0.4760
+            sisnr=14.39/18.83
+            pesq="N/A"/2.719
+            mag=0.0132/0.0075
+            re=0.0496/0.0328
+            im=0.0457/0.0283
+            lr=0.000500
+            
+
+            Epoch 47: 
+            loss=2.3386/0.4528
+            sisnr=14.40/18.82
+            pesq="N/A"/2.815
+            mag=0.0132/0.0077
+            re=0.0496/0.0322
+            im=0.0456/0.0277
+            lr=0.000500
+            
+
+            Epoch 48: 
+            loss=2.3362/0.4977
+            sisnr=14.40/18.70
+            pesq="N/A"/2.702
+            mag=0.0131/0.0076
+            re=0.0496/0.0329
+            im=0.0456/0.0282
+            lr=0.000500
+            
+
+            Epoch 49: 
+            loss=2.3346/0.4691
+            sisnr=14.42/18.79
+            pesq="N/A"/2.755
+            mag=0.0131/0.0075
+            re=0.0496/0.0327
+            im=0.0456/0.0282
+            lr=0.000250
+            
+
+            Epoch 50: 
+            loss=2.3179/0.4684
+            sisnr=14.44/18.82
+            pesq="N/A"/2.742
+            mag=0.0130/0.0072
+            re=0.0495/0.0331
+            im=0.0455/0.0284
+            lr=0.000250
+            
+  -> Saved checkpoint to checkpoints/gtcrn_rat/chunk_16/epoch_50.pt
+
+            Epoch 51: 
+            loss=2.3093/0.4432
+            sisnr=14.47/18.83
+            pesq="N/A"/2.817
+            mag=0.0130/0.0076
+            re=0.0494/0.0321
+            im=0.0454/0.0276
+            lr=0.000250
+            
+  -> Saved best model to checkpoints/gtcrn_rat/chunk_16/best.pt
+
+            Epoch 52: 
+            loss=2.3110/0.4584
+            sisnr=14.46/18.79
+            pesq="N/A"/2.771
+            mag=0.0130/0.0074
+            re=0.0494/0.0326
+            im=0.0454/0.0279
+            lr=0.000250
+            
+
+            Epoch 53: 
+            loss=2.3095/0.4417
+            sisnr=14.47/18.83
+            pesq="N/A"/2.813
+            mag=0.0130/0.0076
+            re=0.0494/0.0322
+            im=0.0454/0.0275
+            lr=0.000250
+            
+  -> Saved best model to checkpoints/gtcrn_rat/chunk_16/best.pt
+
+            Epoch 54: 
+            loss=2.3081/0.4569
+            sisnr=14.47/18.82
+            pesq="N/A"/2.747
+            mag=0.0130/0.0073
+            re=0.0494/0.0327
+            im=0.0455/0.0282
+            lr=0.000250
+            
+
+            Epoch 55: 
+            loss=2.3065/0.4606
+            sisnr=14.47/18.77
+            pesq="N/A"/2.788
+            mag=0.0130/0.0075
+            re=0.0494/0.0325
+            im=0.0454/0.0280
+            lr=0.000250
+            
+
+            Epoch 56: 
+            loss=2.3085/0.4446
+            sisnr=14.47/18.87
+            pesq="N/A"/2.786
+            mag=0.0130/0.0076
+            re=0.0494/0.0323
+            im=0.0454/0.0277
+            lr=0.000250
+            
+
+            Epoch 57: 
+            loss=2.2970/0.4350
+            sisnr=14.49/18.90
+            pesq="N/A"/2.799
+            mag=0.0129/0.0077
+            re=0.0493/0.0321
+            im=0.0453/0.0275
+            lr=0.000250
+            
+  -> Saved best model to checkpoints/gtcrn_rat/chunk_16/best.pt
+
+            Epoch 58: 
+            loss=2.3014/0.4496
+            sisnr=14.49/18.85
+            pesq="N/A"/2.802
+            mag=0.0129/0.0076
+            re=0.0494/0.0323
+            im=0.0454/0.0277
+            lr=0.000250
+            
+
+            Epoch 59: 
+            loss=2.3000/0.4671
+            sisnr=14.50/18.75
+            pesq="N/A"/2.789
+            mag=0.0129/0.0074
+            re=0.0494/0.0328
+            im=0.0454/0.0280
+            lr=0.000250
+            
+
+            Epoch 60: 
+            loss=2.3050/0.4396
+            sisnr=14.46/18.89
+            pesq="N/A"/2.787
+            mag=0.0130/0.0076
+            re=0.0494/0.0323
+            im=0.0454/0.0277
+            lr=0.000250
+            
+  -> Saved checkpoint to checkpoints/gtcrn_rat/chunk_16/epoch_60.pt
+
+            Epoch 61: 
+            loss=2.3015/0.4546
+            sisnr=14.49/18.80
+            pesq="N/A"/2.750
+            mag=0.0130/0.0072
+            re=0.0494/0.0327
+            im=0.0454/0.0282
+            lr=0.000250
+            
+
+            Epoch 62: 
+            loss=2.2964/0.4487
+            sisnr=14.49/18.85
+            pesq="N/A"/2.803
+            mag=0.0129/0.0076
+            re=0.0493/0.0323
+            im=0.0454/0.0278
+            lr=0.000250
+            
+
+            Epoch 63: 
+            loss=2.2988/0.4452
+            sisnr=14.49/18.87
+            pesq="N/A"/2.800
+            mag=0.0130/0.0076
+            re=0.0493/0.0322
+            im=0.0454/0.0277
+            lr=0.000125
+            
+
+            Epoch 64: 
+            loss=2.2853/0.4588
+            sisnr=14.51/18.80
+            pesq="N/A"/2.774
+            mag=0.0128/0.0074
+            re=0.0493/0.0327
+            im=0.0453/0.0281
+            lr=0.000125
+            
+
+            Epoch 65: 
+            loss=2.2873/0.4950
+            sisnr=14.50/18.63
+            pesq="N/A"/2.776
+            mag=0.0129/0.0073
+            re=0.0493/0.0332
+            im=0.0453/0.0284
+            lr=0.000125
+            
+
+            Epoch 66: 
+            loss=2.2861/0.4430
+            sisnr=14.51/18.78
+            pesq="N/A"/2.804
+            mag=0.0129/0.0075
+            re=0.0492/0.0322
+            im=0.0453/0.0276
+            lr=0.000125
+            
+
+            Epoch 67: 
+            loss=2.2808/0.4513
+            sisnr=14.52/18.82
+            pesq="N/A"/2.798
+            mag=0.0128/0.0075
+            re=0.0492/0.0325
+            im=0.0452/0.0278
+            lr=0.000125
+            
+
+            Epoch 68: 
+            loss=2.2872/0.4618
+            sisnr=14.50/18.73
+            pesq="N/A"/2.807
+            mag=0.0129/0.0078
+            re=0.0492/0.0322
+            im=0.0453/0.0276
+            lr=0.000125
+            
+
+            Epoch 69: 
+            loss=2.2818/0.4489
+            sisnr=14.51/18.80
+            pesq="N/A"/2.800
+            mag=0.0129/0.0075
+            re=0.0492/0.0323
+            im=0.0452/0.0278
+            lr=0.000063
+            
+
+            Epoch 70: 
+            loss=2.2762/0.4447
+            sisnr=14.53/18.87
+            pesq="N/A"/2.755
+            mag=0.0128/0.0073
+            re=0.0492/0.0326
+            im=0.0452/0.0281
+            lr=0.000063
+            
+  -> Saved checkpoint to checkpoints/gtcrn_rat/chunk_16/epoch_70.pt
+
+            Epoch 71: 
+            loss=2.2805/0.4745
+            sisnr=14.53/18.77
+            pesq="N/A"/2.728
+            mag=0.0128/0.0071
+            re=0.0492/0.0332
+            im=0.0453/0.0286
+            lr=0.000063
+            
+
+            Epoch 72: 
+            loss=2.2835/0.4372
+            sisnr=14.52/18.92
+            pesq="N/A"/2.772
+            mag=0.0128/0.0074
+            re=0.0493/0.0325
+            im=0.0453/0.0280
+            lr=0.000063
+            
+
+            Epoch 73: 
+            loss=2.2700/0.4328
+            sisnr=14.54/18.90
+            pesq="N/A"/2.787
+            mag=0.0128/0.0075
+            re=0.0491/0.0322
+            im=0.0452/0.0277
+            lr=0.000063
+            
+  -> Saved best model to checkpoints/gtcrn_rat/chunk_16/best.pt
+
+            Epoch 74: 
+            loss=2.2754/0.4433
+            sisnr=14.53/18.77
+            pesq="N/A"/2.831
+            mag=0.0128/0.0077
+            re=0.0492/0.0320
+            im=0.0452/0.0274
+            lr=0.000063
+            
+
+            Epoch 75: 
+            loss=2.2787/0.4417
+            sisnr=14.51/18.87
+            pesq="N/A"/2.784
+            mag=0.0128/0.0075
+            re=0.0492/0.0324
+            im=0.0452/0.0278
+            lr=0.000063
+            
+
+            Epoch 76: 
+            loss=2.2771/0.4495
+            sisnr=14.53/18.86
+            pesq="N/A"/2.777
+            mag=0.0128/0.0073
+            re=0.0492/0.0328
+            im=0.0452/0.0281
+            lr=0.000063
+            
+
+            Epoch 77: 
+            loss=2.2709/0.4409
+            sisnr=14.54/18.83
+            pesq="N/A"/2.798
+            mag=0.0128/0.0074
+            re=0.0491/0.0324
+            im=0.0451/0.0279
+            lr=0.000063
+            
+
+            Epoch 78: 
+            loss=2.2743/0.4378
+            sisnr=14.54/18.89
+            pesq="N/A"/2.804
+            mag=0.0128/0.0075
+            re=0.0492/0.0323
+            im=0.0452/0.0277
+            lr=0.000063
+            
+
+            Epoch 79: 
+            loss=2.2789/0.4454
+            sisnr=14.53/18.82
+            pesq="N/A"/2.804
+            mag=0.0128/0.0076
+            re=0.0492/0.0322
+            im=0.0453/0.0277
+            lr=0.000031
+            
+
+            Epoch 80: 
+            loss=2.2680/0.4394
+            sisnr=14.53/18.86
+            pesq="N/A"/2.791
+            mag=0.0128/0.0074
+            re=0.0491/0.0324
+            im=0.0451/0.0278
+            lr=0.000031
+            
+  -> Saved checkpoint to checkpoints/gtcrn_rat/chunk_16/epoch_80.pt
+
+            Epoch 81: 
+            loss=2.2690/0.4463
+            sisnr=14.53/18.83
+            pesq="N/A"/2.809
+            mag=0.0128/0.0075
+            re=0.0491/0.0324
+            im=0.0451/0.0278
+            lr=0.000031
+            
+
+            Epoch 82: 
+            loss=2.2725/0.4413
+            sisnr=14.53/18.87
+            pesq="N/A"/2.791
+            mag=0.0128/0.0075
+            re=0.0491/0.0323
+            im=0.0452/0.0278
+            lr=0.000031
+            
+
+            Epoch 83: 
+            loss=2.2749/0.4415
+            sisnr=14.52/18.89
+            pesq="N/A"/2.786
+            mag=0.0128/0.0073
+            re=0.0492/0.0326
+            im=0.0452/0.0280
+            lr=0.000031
+            
+
+            Epoch 84: 
+            loss=2.2717/0.4335
+            sisnr=14.54/18.90
+            pesq="N/A"/2.800
+            mag=0.0128/0.0075
+            re=0.0491/0.0323
+            im=0.0452/0.0277
+            lr=0.000031
+            
+
+            Epoch 85: 
+            loss=2.2724/0.4354
+            sisnr=14.53/18.86
+            pesq="N/A"/2.814
+            mag=0.0128/0.0076
+            re=0.0491/0.0321
+            im=0.0452/0.0276
+            lr=0.000016
+            
+
+            Epoch 86: 
+            loss=2.2692/0.4535
+            sisnr=14.55/18.84
+            pesq="N/A"/2.774
+            mag=0.0128/0.0073
+            re=0.0491/0.0327
+            im=0.0452/0.0281
+            lr=0.000016
+            
+
+            Epoch 87: 
+            loss=2.2694/0.4292
+            sisnr=14.53/18.90
+            pesq="N/A"/2.798
+            mag=0.0128/0.0075
+            re=0.0491/0.0321
+            im=0.0451/0.0276
+            lr=0.000016
+            
+  -> Saved best model to checkpoints/gtcrn_rat/chunk_16/best.pt
+
+            Epoch 88: 
+            loss=2.2713/0.4257
+            sisnr=14.54/18.93
+            pesq="N/A"/2.789
+            mag=0.0128/0.0074
+            re=0.0491/0.0323
+            im=0.0452/0.0278
+            lr=0.000016
+            
+  -> Saved best model to checkpoints/gtcrn_rat/chunk_16/best.pt
+
+            Epoch 89: 
+            loss=2.2711/0.4366
+            sisnr=14.54/18.83
+            pesq="N/A"/2.802
+            mag=0.0128/0.0076
+            re=0.0491/0.0320
+            im=0.0452/0.0275
+            lr=0.000016
+            
+
+            Epoch 90: 
+            loss=2.2792/0.4309
+            sisnr=14.51/18.94
+            pesq="N/A"/2.805
+            mag=0.0128/0.0073
+            re=0.0492/0.0325
+            im=0.0452/0.0279
+            lr=0.000016
+            
+  -> Saved checkpoint to checkpoints/gtcrn_rat/chunk_16/epoch_90.pt
+
+            Epoch 91: 
+            loss=2.2695/0.4328
+            sisnr=14.55/18.85
+            pesq="N/A"/2.809
+            mag=0.0128/0.0076
+            re=0.0491/0.0321
+            im=0.0451/0.0276
+            lr=0.000016
+            
+
+            Epoch 92: 
+            loss=2.2668/0.4484
+            sisnr=14.55/18.81
+            pesq="N/A"/2.796
+            mag=0.0128/0.0075
+            re=0.0491/0.0324
+            im=0.0452/0.0278
+            lr=0.000016
+            
+
+            Epoch 93: 
+            loss=2.2716/0.4439
+            sisnr=14.54/18.84
+            pesq="N/A"/2.777
+            mag=0.0128/0.0074
+            re=0.0492/0.0325
+            im=0.0452/0.0278
+            lr=0.000016
+            
+
+            Epoch 94: 
+            loss=2.2691/0.4426
+            sisnr=14.54/18.83
+            pesq="N/A"/2.791
+            mag=0.0128/0.0075
+            re=0.0491/0.0322
+            im=0.0451/0.0277
+            lr=0.000008
+            
+
+            Epoch 95: 
+            loss=2.2672/0.4340
+            sisnr=14.55/18.89
+            pesq="N/A"/2.812
+            mag=0.0128/0.0076
+            re=0.0491/0.0322
+            im=0.0452/0.0276
+            lr=0.000008
+            
+
+            Epoch 96: 
+            loss=2.2683/0.4454
+            sisnr=14.55/18.85
+            pesq="N/A"/2.792
+            mag=0.0128/0.0077
+            re=0.0491/0.0322
+            im=0.0451/0.0276
+            lr=0.000008
+            
+
+            Epoch 97: 
+            loss=2.2748/0.4418
+            sisnr=14.53/18.83
+            pesq="N/A"/2.817
+            mag=0.0128/0.0077
+            re=0.0492/0.0321
+            im=0.0452/0.0276
+            lr=0.000008
+            
+
+            Epoch 98: 
+            loss=2.2692/0.4455
+            sisnr=14.54/18.84
+            pesq="N/A"/2.812
+            mag=0.0128/0.0076
+            re=0.0491/0.0323
+            im=0.0451/0.0277
+            lr=0.000008
+            
+
+            Epoch 99: 
+            loss=2.2697/0.4458
+            sisnr=14.54/18.81
+            pesq="N/A"/2.811
+            mag=0.0128/0.0076
+            re=0.0491/0.0322
+            im=0.0452/0.0276
+            lr=0.000008
+            
+
+            Epoch 100: 
+            loss=2.2671/0.4401
+            sisnr=14.55/18.85
+            pesq="N/A"/2.777
+            mag=0.0128/0.0074
+            re=0.0491/0.0324
+            im=0.0452/0.0279
+            lr=0.000004
+            
+  -> Saved checkpoint to checkpoints/gtcrn_rat/chunk_16/epoch_100.pt
+
+============================================================
+FINISHED: gtcrn_rat/chunk_16
+Best PESQ: 2.831
+Best SI-SNR: 18.94 dB
+============================================================
