@@ -118,8 +118,8 @@ class TSTransformerBlock(nn.Module):
     def __init__(self, h):
         super(TSTransformerBlock, self).__init__()
         self.h = h
-        self.time_transformer = TransformerBlock(d_model=h.dense_channel, n_heads=4)
-        self.freq_transformer = TransformerBlock(d_model=h.dense_channel, n_heads=4)
+        self.time_transformer = TransformerBlock(d_model=h.dense_channel, n_heads=4, chunk_size=321)
+        self.freq_transformer = TransformerBlock(d_model=h.dense_channel, n_heads=4, chunk_size=101)
 
     def forward(self, x):
         b, c, t, f = x.size()
