@@ -7,7 +7,7 @@
 #SBATCH --gpus=1                         # 1 GPU на эксперимент
 #SBATCH --cpus-per-task=4                # 4 CPU
 #SBATCH --nodes=1                        # 1 узел
-#SBATCH --array=0-10                     # 11 экспериментов (0-10)
+#SBATCH --array=0-5                      # 6 экспериментов (0-5)
 
 mkdir -p logs checkpoints
 
@@ -27,18 +27,19 @@ echo "GPU: $CUDA_VISIBLE_DEVICES"
 echo "Date: $(date)"
 echo "=========================================="
 
+# Experiments:
+# 0: gtcrn (baseline)
+# 1-5: gtcrn_rat with chunk_size = 4, 8, 16, 32, 64
+
 CHUNK_SIZES=(4 8 16 32 64)
 TASK_ID=$SLURM_ARRAY_TASK_ID
 
 if [ $TASK_ID -eq 0 ]; then
     MODEL="gtcrn"
     CHUNK=""
-elif [ $TASK_ID -le 5 ]; then
+else
     MODEL="gtcrn_rat"
     CHUNK="--chunk_size ${CHUNK_SIZES[$TASK_ID-1]}"
-else
-    MODEL="gtcrn_grat"
-    CHUNK="--chunk_size ${CHUNK_SIZES[$TASK_ID-6]}"
 fi
 
 echo "Model: $MODEL $CHUNK"

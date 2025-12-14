@@ -6,7 +6,6 @@ Trains one model configuration and saves checkpoints + metrics.
 Usage:
     python run_experiment.py --model gtcrn
     python run_experiment.py --model gtcrn_rat --chunk_size 8
-    python run_experiment.py --model gtcrn_grat --chunk_size 16
 """
 
 import argparse
@@ -15,7 +14,12 @@ import os
 import torch
 from torch.utils.data import DataLoader
 
-from models import GTCRN, GTCRN_RAT, GTCRN_GRAT, count_parameters
+import sys
+sys.path.append("../..")
+
+from models.gtcrn import GTCRN
+from rat_models import GTCRN_RAT
+from utils import count_parameters
 from train import VCTKDatasetFromList, train_model
 
 
@@ -28,9 +32,13 @@ def get_device():
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Train single GTCRN model")
-    parser.add_argument("--model", type=str, required=True, choices=["gtcrn", "gtcrn_rat", "gtcrn_grat"])
-    parser.add_argument("--chunk_size", type=int, default=8, help="Chunk size for RAT/GRAT")
+    parser = argparse.ArgumentParser(description="Train GTCRN(_RAT) model with VCTK dataset")
+    parser.add_argument(
+        "--model", type=str, required=True, choices=["gtcrn", "gtcrn_rat"]
+    )
+    parser.add_argument(
+        "--chunk_size", type=int, default=8, help="Chunk size for RAT/GRAT"
+    )
     parser.add_argument("--epochs", type=int, default=100)
     parser.add_argument("--batch_size", type=int, default=4)
     parser.add_argument("--lr", type=float, default=1e-3)
@@ -42,19 +50,16 @@ def main():
     args = parser.parse_args()
 
     device = get_device()
-    
+
     if args.model == "gtcrn":
         model = GTCRN()
         exp_name = "gtcrn"
-    elif args.model == "gtcrn_rat":
+    else:
         model = GTCRN_RAT(chunk_size=args.chunk_size)
         exp_name = f"gtcrn_rat/chunk_{args.chunk_size}"
-    else:
-        model = GTCRN_GRAT(chunk_size=args.chunk_size)
-        exp_name = f"gtcrn_grat/chunk_{args.chunk_size}"
-    
+
     save_dir = os.path.join(args.output_dir, exp_name)
-    
+
     print("=" * 60)
     print(f"Experiment: {exp_name}")
     print(f"Device: {device}")
@@ -66,25 +71,31 @@ def main():
     print("\nLoading datasets...")
     train_dataset = VCTKDatasetFromList(
         file_list=f"{args.data_dir}/training.txt",
-        clean_dir=f"{args.data_dir}/wav_clean",
-        noisy_dir=f"{args.data_dir}/wav_noisy",
+        clean_dir=f"{args.data_dir}/wavs_clean",
+        noisy_dir=f"{args.data_dir}/wavs_noisy",
         segment_len=args.segment_len,
     )
     val_dataset = VCTKDatasetFromList(
         file_list=f"{args.data_dir}/test.txt",
-        clean_dir=f"{args.data_dir}/wav_clean",
-        noisy_dir=f"{args.data_dir}/wav_noisy",
+        clean_dir=f"{args.data_dir}/wavs_clean",
+        noisy_dir=f"{args.data_dir}/wavs_noisy",
         segment_len=args.segment_len,
     )
     print(f"Train: {len(train_dataset)}, Val: {len(val_dataset)}")
 
     train_loader = DataLoader(
-        train_dataset, batch_size=args.batch_size, shuffle=True,
-        num_workers=args.num_workers, pin_memory=True,
+        train_dataset,
+        batch_size=args.batch_size,
+        shuffle=True,
+        num_workers=args.num_workers,
+        pin_memory=True,
     )
     val_loader = DataLoader(
-        val_dataset, batch_size=args.batch_size, shuffle=False,
-        num_workers=args.num_workers, pin_memory=True,
+        val_dataset,
+        batch_size=args.batch_size,
+        shuffle=False,
+        num_workers=args.num_workers,
+        pin_memory=True,
     )
 
     _, history = train_model(
@@ -101,7 +112,7 @@ def main():
     metrics_path = os.path.join(save_dir, "metrics.json")
     with open(metrics_path, "w") as f:
         json.dump(history, f, indent=2)
-    
+
     best_pesq = max(history["val_pesq"])
     best_sisnr = max(history["val_sisnr"])
     print("\n" + "=" * 60)

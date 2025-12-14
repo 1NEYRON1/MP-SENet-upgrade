@@ -128,8 +128,10 @@ class VCTKDatasetFromList(Dataset):
         return len(self.files)
 
     def _load_audio(self, path):
-        wav, _ = sf.read(path, dtype="float32", always_2d=True) # wav: (samples, channels)
-        wav = torch.from_numpy(wav).mean(-1) # stereo -> mono, wav: (samples,)
+        wav, _ = sf.read(
+            path, dtype="float32", always_2d=True
+        )  # wav: (samples, channels)
+        wav = torch.from_numpy(wav).mean(-1)  # stereo -> mono, wav: (samples,)
         return wav
 
     def _to_stft(self, wav):
@@ -247,11 +249,11 @@ def train_model(
     save_dir.mkdir(parents=True, exist_ok=True)
 
     model = model.to(device)
-    
+
     if device == "cuda":
         torch.backends.cudnn.benchmark = True
         print(f"Using GPU: {torch.cuda.get_device_name(0)}")
-    
+
     optimizer = Adam(model.parameters(), lr=lr)
     scheduler = ReduceLROnPlateau(optimizer, mode="min", factor=0.5, patience=5)
     criterion = HybridLoss(n_fft=n_fft, hop_length=hop_length).to(device)
