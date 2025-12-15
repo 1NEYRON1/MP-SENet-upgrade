@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=gtcrn_exp             # Название задачи
+#SBATCH --job-name=mingru_exp            # Название задачи
 #SBATCH --partition=normal               # Основная очередь (поддерживает GPU)
 #SBATCH --error=logs/exp-%A-%a.err       # Файл ошибок (%A=job_id, %a=array_id)
 #SBATCH --output=logs/exp-%A-%a.log      # Файл вывода
@@ -7,7 +7,7 @@
 #SBATCH --gpus=1                         # 1 GPU на эксперимент
 #SBATCH --cpus-per-task=4                # 4 CPU
 #SBATCH --nodes=1                        # 1 узел
-#SBATCH --array=0-5                      # 6 экспериментов (0-5)
+#SBATCH --array=0-3                      # 4 эксперимента (0-3)
 
 mkdir -p logs checkpoints
 
@@ -29,29 +29,24 @@ echo "=========================================="
 
 # Experiments:
 # 0: gtcrn (baseline)
-# 1-5: gtcrn_rat with chunk_size = 4, 8, 16, 32, 64
+# 1: min_gtcrn (with MinGRU)
+# 2: mpnet (baseline)
+# 3: min_mpnet (with MinGRU)
 
-CHUNK_SIZES=(4 8 16 32 64)
+MODELS=("gtcrn" "min_gtcrn" "mpnet" "min_mpnet")
+EPOCHS=(100 100 400 400)  # gtcrn: 100, mpnet: 400
 TASK_ID=$SLURM_ARRAY_TASK_ID
 
-if [ $TASK_ID -eq 0 ]; then
-    MODEL="gtcrn"
-    CHUNK=""
-else
-    MODEL="gtcrn_rat"
-    CHUNK="--chunk_size ${CHUNK_SIZES[$TASK_ID-1]}"
-fi
+MODEL=${MODELS[$TASK_ID]}
+NUM_EPOCHS=${EPOCHS[$TASK_ID]}
 
-echo "Model: $MODEL $CHUNK"
+echo "Model: $MODEL"
+echo "Epochs: $NUM_EPOCHS"
 echo "=========================================="
 
 python -u run_experiment.py \
     --model $MODEL \
-    $CHUNK \
-    --epochs 100 \
-    --batch_size 4 \
-    --lr 1e-3 \
-    --num_workers 4 \
+    --epochs $NUM_EPOCHS \
     --save_every 10 \
     --data_dir ../../VoiceBank+DEMAND \
     --output_dir checkpoints

@@ -4,6 +4,10 @@ import torch
 import torch.utils.data
 import librosa
 
+import soundfile as sf
+from pathlib import Path
+import torch.nn.functional as F
+
 
 def mag_pha_stft(y, n_fft, hop_size, win_size, compress_factor=1.0, center=True):
 
@@ -146,3 +150,71 @@ class Dataset(torch.utils.data.Dataset):
 
     def __len__(self):
         return len(self.audio_indexes)
+
+
+class VCTKDatasetFromList(Dataset):
+    """VCTK-DEMAND dataset. File list format: id|path per line."""
+
+    def __init__(
+        self,
+        file_list,
+        clean_dir,
+        noisy_dir,
+        n_fft=512,
+        hop_length=256,
+        segment_len=32000,
+        return_audio=False,
+    ):
+        self.clean_dir = Path(clean_dir)
+        self.noisy_dir = Path(noisy_dir)
+        self.n_fft = n_fft
+        self.hop_length = hop_length
+        self.segment_len = segment_len
+        self.return_audio = return_audio
+        self.window = torch.hann_window(n_fft).pow(0.5)
+
+        with open(file_list) as f:
+            self.files = [line.split("|")[0] + ".wav" for line in f if line.strip()]
+        print(f"Loaded {len(self.files)} files from {file_list}")
+
+    def __len__(self):
+        return len(self.files)
+
+    def _load_audio(self, path):
+        wav, _ = sf.read(
+            path, dtype="float32", always_2d=True
+        )  # wav: (samples, channels)
+        wav = torch.from_numpy(wav).mean(-1)  # stereo -> mono, wav: (samples,)
+        return wav
+
+    def _to_stft(self, wav):
+        stft = torch.stft(
+            wav,
+            self.n_fft,
+            self.hop_length,
+            self.n_fft,
+            window=self.window,
+            return_complex=True,
+        )
+        return torch.stack([stft.real, stft.imag], dim=-1)
+
+    def __getitem__(self, idx):
+        filename = self.files[idx]
+        clean = self._load_audio(self.clean_dir / filename)
+        noisy = self._load_audio(self.noisy_dir / filename)
+
+        # segment_len = None means use full audio
+        if self.segment_len is not None:
+            start = random.randint(0, max(0, clean.shape[0] - self.segment_len))
+            clean = self._segment_at(clean, start)
+            noisy = self._segment_at(noisy, start)
+
+        if self.return_audio:
+            return noisy, clean
+        return self._to_stft(noisy), self._to_stft(clean)
+
+    def _segment_at(self, wav, start):
+        segment = wav[start : start + self.segment_len]
+        if segment.shape[0] < self.segment_len:
+            segment = F.pad(segment, (0, self.segment_len - segment.shape[0]))
+        return segment

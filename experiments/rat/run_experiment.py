@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Single experiment training script for HPC cluster.
+Single experiment training script.
 Trains one model configuration and saves checkpoints + metrics.
 
 Usage:
@@ -8,31 +8,27 @@ Usage:
     python run_experiment.py --model gtcrn_rat --chunk_size 8
 """
 
+import sys
+
+sys.path.append("../..")
+
+
 import argparse
 import json
 import os
-import torch
 from torch.utils.data import DataLoader
 
-import sys
-sys.path.append("../..")
 
-from models.gtcrn import GTCRN
+from models import GTCRN
 from rat_models import GTCRN_RAT
-from utils import count_parameters
-from train import VCTKDatasetFromList, train_model
-
-
-def get_device():
-    if torch.cuda.is_available():
-        return "cuda"
-    if torch.mps.is_available():
-        return "mps"
-    return "cpu"
+from utils import count_parameters, get_device, VCTKDatasetFromList
+from train.gtcrn import train_model
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Train GTCRN(_RAT) model with VCTK dataset")
+    parser = argparse.ArgumentParser(
+        description="Train GTCRN(_RAT) model with VCTK dataset"
+    )
     parser.add_argument(
         "--model", type=str, required=True, choices=["gtcrn", "gtcrn_rat"]
     )
@@ -45,7 +41,7 @@ def main():
     parser.add_argument("--segment_len", type=int, default=32000)
     parser.add_argument("--num_workers", type=int, default=4)
     parser.add_argument("--save_every", type=int, default=10)
-    parser.add_argument("--data_dir", type=str, default="data")
+    parser.add_argument("--data_dir", type=str, default="../../VoiceBank+DEMAND")
     parser.add_argument("--output_dir", type=str, default="checkpoints")
     args = parser.parse_args()
 
