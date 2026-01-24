@@ -1,0 +1,16 @@
+# Core dependencies for MinGRU experiments
+torch>=1.11.0
+numpy>=1.21.0
+librosa>=0.7.0
+soundfile>=0.10.0
+scipy>=1.5.0
+
+# Metrics and utilities
+pesq>=0.0.4
+joblib>=1.1.0
+einops>=0.6.0
+tqdm>=4.60.0
+
+# Optional but recommended
+tensorboard>=2.11.0
+natsort>=8.3.0
