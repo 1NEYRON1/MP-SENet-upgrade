@@ -114,7 +114,7 @@ def train_epoch(model, train_loader, optimizer, criterion, device, epoch):
 
 
 @torch.no_grad()
-def validate_epoch(model, val_loader, criterion, device, n_fft=512, hop_length=256):
+def validate_epoch(model, val_loader, criterion, device, n_fft=512, hop_length=256, verbose=True):
     model.to(device).eval()
     criterion = criterion.to(device)
     total_loss = 0
@@ -122,7 +122,8 @@ def validate_epoch(model, val_loader, criterion, device, n_fft=512, hop_length=2
     pesq_scores = []
     window = torch.hann_window(n_fft).pow(0.5).to(device)
 
-    for noisy, clean in tqdm(val_loader, desc="Validation"):
+    loader = tqdm(val_loader, desc="Validation") if verbose else val_loader
+    for noisy, clean in loader:
         noisy, clean = noisy.to(device), clean.to(device)
         pred = model(noisy)
         loss, loss_dict = criterion(pred, clean)

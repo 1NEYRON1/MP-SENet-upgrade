@@ -57,6 +57,12 @@ class DenseBlock(nn.Module):
         return x
 
 
+def encoder_freq_dim(n_fft):
+    """Freq dimension after DenseEncoder (dense_conv_2: kernel=(1,3), stride=(1,2), padding=(0,1))."""
+    F = n_fft // 2 + 1
+    return (F + 2 * 1 - 3) // 2 + 1
+
+
 class DenseEncoder(nn.Module):
     def __init__(self, h, in_channel):
         super(DenseEncoder, self).__init__()

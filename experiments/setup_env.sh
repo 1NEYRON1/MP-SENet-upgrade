@@ -1,22 +1,16 @@
 #!/bin/bash
-echo "=== Setting up gtcrn_env environment ==="
+echo "=== Setting up .venv environment ==="
 
-module purge
-module load Python
-
-echo "Creating conda environment..."
-conda create -n gtcrn_env python=3.10 -y
-
-eval "$(conda shell.bash hook)"
-conda activate gtcrn_env
-conda install -c conda-forge soxr-python -y
+# Create venv
+python3 -m venv .venv
+source .venv/bin/activate
 
 echo "Installing PyTorch with CUDA 12.4 support..."
-module load CUDA/12.4
-pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
+pip install --upgrade pip
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
 
 echo "Installing dependencies..."
-CFLAGS="-std=c99" pip3 install soundfile pesq tqdm matplotlib numpy einops librosa scipy joblib
+CFLAGS="-std=c99" pip install soundfile pesq tqdm matplotlib numpy einops librosa scipy joblib
 
 echo "=== Verification ==="
 python -c "import torch; print(f'PyTorch: {torch.__version__}')"
@@ -32,7 +26,6 @@ python -c "import joblib; print('joblib: OK')"
 
 echo "=== Done! ==="
 echo "Next steps:"
-echo "  1. source activate gtcrn_env"
-echo "  2. sbatch run_all.sbatch      # Запустить ВСЕ эксперименты"
-echo "  3. sbatch run_single.sbatch gtcrn # Или один эксперимент"
-echo "  4. mj                         # Проверить статус задач"
+echo "  1. source .venv/bin/activate"
+echo "  2. cd rat && sbatch run_mpnet_rat.sbatch"
+echo "  3. squeue -u \$USER   # Проверить статус задач"

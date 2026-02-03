@@ -22,6 +22,7 @@ from models.gtcrn import (
     Decoder,
     Mask,
 )
+from models.mpnet.model import DenseEncoder, MaskDecoder, PhaseDecoder, encoder_freq_dim
 
 # ======================= RAT Block =======================
 
@@ -190,3 +191,39 @@ class GTCRN_RAT(nn.Module):
         m = self.erb.bs(m_feat)
         spec_enh = self.mask(m, spec_ref.permute(0, 3, 2, 1))
         return spec_enh.permute(0, 3, 2, 1)
+
+
+# ======================= MP-SENet + RAT =======================
+
+
+class MPNet_RAT(nn.Module):
+    """MP-SENet with RAT blocks replacing TSTransformer blocks."""
+
+    def __init__(self, h, chunk_size=8, num_rat_blocks=4, num_heads=4):
+        super().__init__()
+        self.h = h
+        self.dense_encoder = DenseEncoder(h, in_channel=2)
+        freq_dim = encoder_freq_dim(h.n_fft)
+        dense_channel = h.dense_channel
+        self.rat_blocks = nn.ModuleList([
+            RATBlock(dense_channel, freq_dim, dense_channel, chunk_size=chunk_size, num_heads=num_heads)
+            for _ in range(num_rat_blocks)
+        ])
+        self.mask_decoder = MaskDecoder(h, out_channel=1)
+        self.phase_decoder = PhaseDecoder(h, out_channel=1)
+
+    def forward(self, noisy_amp, noisy_pha):
+        x = torch.stack((noisy_amp, noisy_pha), dim=-1).permute(0, 3, 2, 1)
+        x = self.dense_encoder(x)
+        for rat in self.rat_blocks:
+            x = rat(x)
+        denoised_amp = noisy_amp * self.mask_decoder(x)
+        denoised_pha = self.phase_decoder(x)
+        denoised_com = torch.stack(
+            (
+                denoised_amp * torch.cos(denoised_pha),
+                denoised_amp * torch.sin(denoised_pha),
+            ),
+            dim=-1,
+        )
+        return denoised_amp, denoised_pha, denoised_com
