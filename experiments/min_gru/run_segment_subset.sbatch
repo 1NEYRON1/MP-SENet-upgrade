@@ -6,22 +6,25 @@
 #SBATCH --time=168:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=16
-#SBATCH --gpus-per-task=1
-#SBATCH --nodelist=jupyterhub-slurm-node2
+#SBATCH --cpus-per-task=4
+#SBATCH --gpus=1
 
 # Эксперименты с segment_size и объёмом данных. Одна модель за запуск.
-# Примеры:
-#   MODEL=min_mpnet SEGMENT_SIZE=16000 OUTPUT_SUFFIX=_seg16k_min sbatch run_segment_subset.sbatch
-#   MODEL=mpnet SEGMENT_SIZE=64000 OUTPUT_SUFFIX=_seg64k sbatch run_segment_subset.sbatch
-#   MODEL=min_mpnet SUBSET_RATIO=0.5 OUTPUT_SUFFIX=_subset_0.5 sbatch run_segment_subset.sbatch
+# Примеры (16kHz: 0.5s=8000, 0.8s=12800, 1.0s=16000):
+#   MODEL=mpnet SEGMENT_SIZE=8000 OUTPUT_SUFFIX=_0.5s sbatch run_segment_subset.sbatch
+#   MODEL=mpnet SEGMENT_SIZE=12800 OUTPUT_SUFFIX=_0.8s sbatch run_segment_subset.sbatch
+#   MODEL=mpnet SEGMENT_SIZE=16000 OUTPUT_SUFFIX=_1.0s sbatch run_segment_subset.sbatch
 
 mkdir -p logs checkpoints
 
-source .venv/bin/activate
+# Activate venv (created by setup_env.sh in experiments/)
+source ../.venv/bin/activate
+
+export PATH=/usr/local/cuda/bin:$PATH
+export LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
 
 MODEL=${MODEL:-mpnet}
-: ${OUTPUT_SUFFIX:?OUTPUT_SUFFIX required, e.g. OUTPUT_SUFFIX=_seg16k}
+: ${OUTPUT_SUFFIX:?OUTPUT_SUFFIX required, e.g. OUTPUT_SUFFIX=_0.5s}
 EXTRA=""
 [ -n "${SEGMENT_SIZE:-}" ] && EXTRA="$EXTRA --segment_size $SEGMENT_SIZE"
 [ -n "${SUBSET_RATIO:-}" ] && EXTRA="$EXTRA --subset_ratio $SUBSET_RATIO"
@@ -33,8 +36,8 @@ echo "=========================================="
 
 python -u run_experiment.py \
     --model $MODEL \
-    --epochs 400 \
-    --save_every 10 \
-    --data_dir ../../VoiceBank+DEMAND \
+    --epochs 100 \
+    --save_every 1 \
+    --data_dir ../VoiceBank+DEMAND \
     --output_dir "checkpoints/${MODEL}${OUTPUT_SUFFIX}" \
     $EXTRA
