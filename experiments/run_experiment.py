@@ -118,7 +118,7 @@ def main():
         val_list,
         clean_dir,
         noisy_dir,
-        segment_len=segment_len,
+        segment_len=None,
         return_audio=is_mpnet_family,
     )
     train_loader = DataLoader(
@@ -130,7 +130,7 @@ def main():
     )
     val_loader = DataLoader(
         val_ds,
-        batch_size=batch_size,
+        batch_size=1,
         shuffle=False,
         num_workers=num_workers,
     )

@@ -56,7 +56,7 @@ def compute_pesq(ref, est, sr=16000):
         return 0.0
 
 
-def compute_sisnr(ref, est):
+def compute_sisnr(ref, est):    
     ref = ref - ref.mean(dim=-1, keepdim=True)
     est = est - est.mean(dim=-1, keepdim=True)
     dot = (ref * est).sum(dim=-1, keepdim=True)
