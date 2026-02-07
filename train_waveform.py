@@ -17,7 +17,7 @@ from torch.nn.parallel import DistributedDataParallel
 # from torch.cuda.amp import autocast, GradScaler  # Import AMP components
 from env import AttrDict, build_env
 from dataset import Dataset, mag_pha_stft, mag_pha_istft, get_dataset_filelist
-from models.model import MPNet_waveform, pesq_score, phase_losses
+from models.model import MPNet_waveform, MPNet, MPNet_waveform_encoder, pesq_score, phase_losses
 from models.discriminator import MetricDiscriminator, batch_pesq
 from utils import scan_checkpoint, load_checkpoint, save_checkpoint
 
@@ -32,8 +32,13 @@ def train(rank, a, h):
 
     torch.cuda.manual_seed(h.seed)
     device = torch.device('cuda:{:d}'.format(rank))
-
-    generator = MPNet_waveform(h).to(device)
+    
+    if h.waveform == "stack":
+        generator = MPNet_waveform(h).to(device)
+    elif h.waveform == "encoder":
+        generator = MPNet_waveform_encoder(h).to(device)
+    else:
+        generator = MPNet(h).to(device)
     discriminator = MetricDiscriminator().to(device)
 
     # Initialize GradScaler for AMP (optional for bf16, but included for robustness)
@@ -128,7 +133,12 @@ def train(rank, a, h):
             clean_mag, clean_pha, clean_com = mag_pha_stft(clean_audio, h.n_fft, h.hop_size, h.win_size, h.compress_factor)
             noisy_mag, noisy_pha, noisy_com = mag_pha_stft(noisy_audio, h.n_fft, h.hop_size, h.win_size, h.compress_factor)
 
-            mag_g, pha_g, com_g = generator(noisy_mag, noisy_pha, noisy_com)
+            # mag_g, pha_g, com_g = generator(noisy_mag, noisy_pha, noisy_com)
+            if h.waveform == "encoder":
+                mag_g, pha_g, com_g = generator(noisy_mag, noisy_pha, noisy_audio)
+            else:
+                mag_g, pha_g, com_g = generator(noisy_mag, noisy_pha)
+
 
             audio_g = mag_pha_istft(mag_g, pha_g, h.n_fft, h.hop_size, h.win_size, h.compress_factor)
             mag_g_hat, pha_g_hat, com_g_hat = mag_pha_stft(audio_g, h.n_fft, h.hop_size, h.win_size, h.compress_factor)
@@ -141,7 +151,8 @@ def train(rank, a, h):
 
             batch_pesq_score = batch_pesq(clean_audio.cpu().numpy(), audio_g.detach().cpu().numpy())
             if batch_pesq_score is not None:
-                loss_disc_g = F.mse_loss(torch.tensor(batch_pesq_score, device=device, dtype=torch.bfloat16), metric_g.flatten())
+                # loss_disc_g = F.mse_loss(torch.tensor(batch_pesq_score, device=device, dtype=torch.bfloat16), metric_g.flatten())
+                loss_disc_g = F.mse_loss(torch.tensor(batch_pesq_score, device=device), metric_g.flatten())
             else:
                 print('pesq is None!')
                 loss_disc_g = 0
@@ -232,7 +243,12 @@ def train(rank, a, h):
                             clean_mag, clean_pha, clean_com = mag_pha_stft(clean_audio, h.n_fft, h.hop_size, h.win_size, h.compress_factor)
                             noisy_mag, noisy_pha, noisy_com = mag_pha_stft(noisy_audio, h.n_fft, h.hop_size, h.win_size, h.compress_factor)
 
-                            mag_g, pha_g, com_g = generator(noisy_mag, noisy_pha)
+                            # mag_g, pha_g, com_g = generator(noisy_mag, noisy_pha)
+                            if h.waveform == "encoder":
+                                mag_g, pha_g, com_g = generator(noisy_mag, noisy_pha, noisy_audio)
+                            else:
+                                mag_g, pha_g, com_g = generator(noisy_mag, noisy_pha)
+
 
                             audio_g = mag_pha_istft(mag_g, pha_g, h.n_fft, h.hop_size, h.win_size, h.compress_factor)
                             mag_g_hat, pha_g_hat, com_g_hat = mag_pha_stft(audio_g, h.n_fft, h.hop_size, h.win_size, h.compress_factor)
