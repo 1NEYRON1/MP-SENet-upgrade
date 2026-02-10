@@ -52,20 +52,12 @@ class ConformerConvModule(nn.Module):
 class AttentionModule(nn.Module):
     def __init__(self, dim, n_head=8, dropout=0.):
         super(AttentionModule, self).__init__()
-        self.n_head = n_head
-        self.head_dim = dim // n_head
         self.layernorm = nn.LayerNorm(dim)
-        self.qkv = nn.Linear(dim, dim * 3)
-        self.out_proj = nn.Linear(dim, dim)
+        self.attn = nn.MultiheadAttention(dim, n_head, dropout=dropout, batch_first=True)
 
     def forward(self, x, attn_mask=None, key_padding_mask=None):
-        b, s, d = x.shape
         x = self.layernorm(x)
-        qkv = self.qkv(x).reshape(b, s, 3, self.n_head, self.head_dim)
-        q, k, v = qkv.permute(2, 0, 3, 1, 4).unbind(0)
-        x = F.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask)
-        x = x.transpose(1, 2).reshape(b, s, d)
-        x = self.out_proj(x)
+        x, _ = self.attn(x, x, x, attn_mask=attn_mask, key_padding_mask=key_padding_mask, need_weights=False)
         return x
 
 
