@@ -2,11 +2,19 @@ import os
 import random
 import torch
 import torch.utils.data
-import librosa
+from torchcodec.decoders import AudioDecoder
+
+_hann_window_cache = {}
+
+def _get_hann_window(win_size, device):
+    key = (win_size, device)
+    if key not in _hann_window_cache:
+        _hann_window_cache[key] = torch.hann_window(win_size, device=device)
+    return _hann_window_cache[key]
 
 def mag_pha_stft(y, n_fft, hop_size, win_size, compress_factor=1.0, center=True):
 
-    hann_window = torch.hann_window(win_size).to(y.device)
+    hann_window = _get_hann_window(win_size, y.device)
     stft_spec = torch.stft(y, n_fft, hop_length=hop_size, win_length=win_size, window=hann_window,
                            center=center, pad_mode='reflect', normalized=False, return_complex=True)
     stft_spec = torch.view_as_real(stft_spec)
@@ -23,7 +31,7 @@ def mag_pha_istft(mag, pha, n_fft, hop_size, win_size, compress_factor=1.0, cent
     # Magnitude Decompression
     mag = torch.pow(mag, (1.0/compress_factor))
     com = torch.complex(mag*torch.cos(pha), mag*torch.sin(pha))
-    hann_window = torch.hann_window(win_size).to(com.device)
+    hann_window = _get_hann_window(win_size, com.device)
     wav = torch.istft(com, n_fft, hop_length=hop_size, win_length=win_size, window=hann_window, center=center)
 
     return wav
@@ -40,7 +48,7 @@ def get_dataset_filelist(a):
 
 
 class Dataset(torch.utils.data.Dataset):
-    def __init__(self, training_indexes, clean_wavs_dir, noisy_wavs_dir, segment_size, 
+    def __init__(self, training_indexes, clean_wavs_dir, noisy_wavs_dir, segment_size,
                 sampling_rate, split=True, shuffle=True, n_cache_reuse=1, device=None):
         self.audio_indexes = training_indexes
         random.seed(1234)
@@ -60,8 +68,8 @@ class Dataset(torch.utils.data.Dataset):
     def __getitem__(self, index):
         filename = self.audio_indexes[index]
         if self._cache_ref_count == 0:
-            clean_audio, _ = librosa.load(os.path.join(self.clean_wavs_dir, filename + '.wav'), sr=self.sampling_rate)
-            noisy_audio, _ = librosa.load(os.path.join(self.noisy_wavs_dir, filename + '.wav'), sr=self.sampling_rate)
+            clean_audio = AudioDecoder(os.path.join(self.clean_wavs_dir, filename + '.wav'), sample_rate=self.sampling_rate, num_channels=1).get_all_samples().data.squeeze(0)
+            noisy_audio = AudioDecoder(os.path.join(self.noisy_wavs_dir, filename + '.wav'), sample_rate=self.sampling_rate, num_channels=1).get_all_samples().data.squeeze(0)
             length = min(len(clean_audio), len(noisy_audio))
             clean_audio, noisy_audio = clean_audio[: length], noisy_audio[: length]
             self.cached_clean_wav = clean_audio
@@ -71,9 +79,9 @@ class Dataset(torch.utils.data.Dataset):
             clean_audio = self.cached_clean_wav
             noisy_audio = self.cached_noisy_wav
             self._cache_ref_count -= 1
-        
-        clean_audio, noisy_audio = torch.FloatTensor(clean_audio), torch.FloatTensor(noisy_audio)
-        norm_factor = torch.sqrt(len(noisy_audio) / torch.sum(noisy_audio ** 2.0))
+
+        clean_audio, noisy_audio = clean_audio.float(), noisy_audio.float()
+        norm_factor = torch.sqrt(len(noisy_audio) / (torch.sum(noisy_audio ** 2.0) + 1e-8))
         clean_audio = (clean_audio * norm_factor).unsqueeze(0)
         noisy_audio = (noisy_audio * norm_factor).unsqueeze(0)
 

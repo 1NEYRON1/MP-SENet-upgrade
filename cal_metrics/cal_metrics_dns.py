@@ -1,8 +1,8 @@
 import os
 import argparse
-import librosa
 import pysepm
 import numpy as np
+from torchcodec.decoders import AudioDecoder
 from pesq import pesq
 from rich.progress import track
 
@@ -33,12 +33,12 @@ def main(h):
     metrics = {'pesq_wb':[], 'pesq_nb':[], 'stoi':[], 'sisdr': [], 'apd': []}
 
     for index in track(indexes):
-        
+
         noisy_wav = os.path.join(h.noisy_wav_dir, index)
         clean_wav = os.path.join(h.clean_wav_dir,index)
 
-        clean, _ = librosa.load(clean_wav, sr=h.sampling_rate)
-        noisy, _ = librosa.load(noisy_wav, sr=h.sampling_rate)
+        clean = AudioDecoder(clean_wav, sample_rate=h.sampling_rate, num_channels=1).get_all_samples().data.squeeze(0).numpy()
+        noisy = AudioDecoder(noisy_wav, sample_rate=h.sampling_rate, num_channels=1).get_all_samples().data.squeeze(0).numpy()
         length = min(len(clean), len(noisy))
         clean = clean[0: length]
         noisy = noisy[0: length]
@@ -66,7 +66,7 @@ def main(h):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--sampling_rate', default=16000)
+    parser.add_argument('--sampling_rate', default=16000, type=int)
     parser.add_argument('--clean_wav_dir', required=True)
     parser.add_argument('--noisy_wav_dir', required=True)
 

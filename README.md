@@ -5,26 +5,33 @@ A [long-version](https://arxiv.org/abs/2308.08926) MP-SENet was extended to the 
 Audio samples can be found at the [demo website](http://yxlu-0102.github.io/MP-SENet).<br>
 We provide our implementation as open source in this repository.
 
-## ⚠️ Note
-There is a small bug in our code, but it does not affect the overall performance of the model. 
-If you intend to retrain the model, it’s **strongly recommended** to set `batch_first=True` in the `MultiHeadAttention` module inside [transformer.py](models/transformer.py), which can significantly reduce the memory usage of the model.
-
 ## Pre-requisites
-1. Python >= 3.6.
-2. Clone this repository.
-3. Install python requirements. Please refer [requirements.txt](https://github.com/yxlu-0102/MP-SENet/blob/main/requirements.txt).
+1. Python >= 3.13
+2. Clone this repository
+3. Install dependencies via [uv](https://github.com/astral-sh/uv):
+```
+uv sync
+```
 4. Download and extract the [VoiceBank+DEMAND dataset](https://datashare.ed.ac.uk/handle/10283/1942). Resample all wav files to 16kHz, and move the clean and noisy wavs to `VoiceBank+DEMAND/wavs_clean` and `VoiceBank+DEMAND/wavs_noisy`, respectively. You can also directly download the downsampled 16kHz dataset [here](https://drive.google.com/drive/folders/19I_thf6F396y5gZxLTxYIojZXC0Ywm8l).
 
 ## Training
+
+Single GPU:
 ```
-CUDA_VISIBLE_DEVICES=0,1 python train.py --config config.json
+uv run python train.py --config config.yaml
 ```
-Checkpoints and copy of the configuration file are saved in the `cp_mpsenet` directory by default.<br>
+
+Multi-GPU (via torchrun):
+```
+ uv run torchrun --nproc-per-node=gpu train.py --config config.yaml
+```
+
+Checkpoints and copy of the configuration file are saved in the `cp_model` directory by default.<br>
 You can change the path by adding `--checkpoint_path` option.
 
 ## Inference
 ```
-python inference.py --checkpoint_file [generator checkpoint file path]
+uv run python inference.py --checkpoint_file [generator checkpoint file path]
 ```
 You can also use the pretrained best checkpoint files we provide in the `best_ckpt` directory.
 <br>
@@ -32,7 +39,7 @@ Generated wav files are saved in `generated_files` by default.
 You can change the path by adding `--output_dir` option.<br>
 Here is an example:
 ```
-python inference.py --checkpoint_file best_ckpt/g_best_vb --output_dir generated_files/MP-SENet_VB
+uv run python inference.py --checkpoint_file best_ckpt/g_best_vb --output_dir generated_files/MP-SENet_VB
 ```
 
 ## Model Structure

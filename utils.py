@@ -1,3 +1,4 @@
+import logging
 import os
 import glob
 import torch
@@ -30,7 +31,6 @@ class LearnableSigmoid1d(nn.Module):
         super().__init__()
         self.beta = beta
         self.slope = nn.Parameter(torch.ones(in_features))
-        self.slope.requiresGrad = True
 
     def forward(self, x):
         return self.beta * torch.sigmoid(self.slope * x)
@@ -41,7 +41,6 @@ class LearnableSigmoid2d(nn.Module):
         super().__init__()
         self.beta = beta
         self.slope = nn.Parameter(torch.ones(in_features, 1))
-        self.slope.requiresGrad = True
 
     def forward(self, x):
         return self.beta * torch.sigmoid(self.slope * x)
@@ -51,7 +50,7 @@ class Sigmoid2d(nn.Module):
     def __init__(self, in_features, beta=1):
         super().__init__()
         self.beta = beta
-        self.slope = torch.ones(in_features, 1)
+        self.register_buffer('slope', torch.ones(in_features, 1))
 
     def forward(self, x):
         return self.beta * torch.sigmoid(self.slope * x)
@@ -62,25 +61,24 @@ class PLSigmoid(nn.Module):
         super().__init__()
         self.beta = nn.Parameter(torch.ones(in_features, 1) * 2.0)
         self.slope = nn.Parameter(torch.ones(in_features, 1))
-        self.beta.requiresGrad = True
-        self.slope.requiresGrad = True
 
     def forward(self, x):
         return self.beta * torch.sigmoid(self.slope * x)
     
 
+logger = logging.getLogger('train')
+
+
 def load_checkpoint(filepath, device):
     assert os.path.isfile(filepath)
-    print("Loading '{}'".format(filepath))
-    checkpoint_dict = torch.load(filepath, map_location=device)
-    print("Complete.")
+    logger.info("Loading '%s'", filepath)
+    checkpoint_dict = torch.load(filepath, map_location=device, weights_only=True)
     return checkpoint_dict
 
 
 def save_checkpoint(filepath, obj):
-    print("Saving checkpoint to {}".format(filepath))
+    logger.info("Saving checkpoint to %s", filepath)
     torch.save(obj, filepath)
-    print("Complete.")
 
 
 def scan_checkpoint(cp_dir, prefix):

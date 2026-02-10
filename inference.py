@@ -1,18 +1,17 @@
 from __future__ import absolute_import, division, print_function, unicode_literals
-import sys
-sys.path.append("..")
-import glob
 import os
 import argparse
-import json
-from re import S
+import yaml
 import torch
-import librosa
-from env import AttrDict
+from torch.amp import autocast
+from torchcodec.decoders import AudioDecoder
+from torchcodec.encoders import AudioEncoder
+from types import SimpleNamespace
 from dataset import mag_pha_stft, mag_pha_istft
 from models.model import MPNet
-import soundfile as sf
 from rich.progress import track
+
+torch.set_float32_matmul_precision('high')
 
 h = None
 device = None
@@ -20,16 +19,9 @@ device = None
 def load_checkpoint(filepath, device):
     assert os.path.isfile(filepath)
     print("Loading '{}'".format(filepath))
-    checkpoint_dict = torch.load(filepath, map_location=device)
+    checkpoint_dict = torch.load(filepath, map_location=device, weights_only=True)
     print("Complete.")
     return checkpoint_dict
-
-def scan_checkpoint(cp_dir, prefix):
-    pattern = os.path.join(cp_dir, prefix + '*')
-    cp_list = glob.glob(pattern)
-    if len(cp_list) == 0:
-        return ''
-    return sorted(cp_list)[-1]
 
 def inference(a):
     model = MPNet(h).to(device)
@@ -37,7 +29,9 @@ def inference(a):
     state_dict = load_checkpoint(a.checkpoint_file, device)
     model.load_state_dict(state_dict['generator'])
 
-    test_indexes = os.listdir(a.input_noisy_wavs_dir)
+    model = torch.compile(model, dynamic=True)
+
+    test_indexes = [f for f in os.listdir(a.input_noisy_wavs_dir) if f.endswith('.wav')]
 
     os.makedirs(a.output_dir, exist_ok=True)
 
@@ -45,36 +39,34 @@ def inference(a):
 
     with torch.no_grad():
         for index in track(test_indexes):
-            noisy_wav, _ = librosa.load(os.path.join(a.input_noisy_wavs_dir, index), sr=h.sampling_rate)
-            noisy_wav = torch.FloatTensor(noisy_wav).to(device)
-            norm_factor = torch.sqrt(len(noisy_wav) / torch.sum(noisy_wav ** 2.0)).to(device)
+            wav_path = os.path.join(a.input_noisy_wavs_dir, index)
+            noisy_wav = AudioDecoder(wav_path, sample_rate=h.sampling_rate, num_channels=1).get_all_samples().data.squeeze(0).to(device)
+            norm_factor = torch.sqrt(len(noisy_wav) / (torch.sum(noisy_wav ** 2.0) + 1e-8)).to(device)
             noisy_wav = (noisy_wav * norm_factor).unsqueeze(0)
             noisy_amp, noisy_pha, noisy_com = mag_pha_stft(noisy_wav, h.n_fft, h.hop_size, h.win_size, h.compress_factor)
-            amp_g, pha_g, com_g = model(noisy_amp, noisy_pha)
-            audio_g = mag_pha_istft(amp_g, pha_g, h.n_fft, h.hop_size, h.win_size, h.compress_factor)
+            with autocast('cuda', dtype=torch.bfloat16):
+                amp_g, pha_g, com_g = model(noisy_amp, noisy_pha)
+            audio_g = mag_pha_istft(amp_g.float(), pha_g.float(), h.n_fft, h.hop_size, h.win_size, h.compress_factor)
             audio_g = audio_g / norm_factor
 
             output_file = os.path.join(a.output_dir, index)
 
-            sf.write(output_file, audio_g.squeeze().cpu().numpy(), h.sampling_rate, 'PCM_16')
+            AudioEncoder(samples=audio_g.unsqueeze(0).cpu(), sample_rate=h.sampling_rate).to_file(output_file)
 
 
 def main():
     print('Initializing Inference Process..')
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--input_noisy_wavs_dir', default='VoiceBank+DEMAND/testset_noisy')
+    parser.add_argument('--input_noisy_wavs_dir', default='/work/VoiceBank+DEMAND/testset_noisy')
     parser.add_argument('--output_dir', default='../generated_files')
     parser.add_argument('--checkpoint_file', required=True)
     a = parser.parse_args()
 
-    config_file = os.path.join(os.path.split(a.checkpoint_file)[0], 'config.json')
+    config_file = os.path.join(os.path.split(a.checkpoint_file)[0], 'config.yaml')
     with open(config_file) as f:
-        data = f.read()
-
-    global h
-    json_config = json.loads(data)
-    h = AttrDict(json_config)
+        global h
+        h = SimpleNamespace(**yaml.safe_load(f))
 
     torch.manual_seed(h.seed)
     global device
