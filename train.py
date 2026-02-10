@@ -22,8 +22,6 @@ from models.discriminator import MetricDiscriminator, batch_pesq
 from utils import scan_checkpoint, load_checkpoint, save_checkpoint
 
 torch.backends.cudnn.benchmark = True
-# torch.backends.cuda.matmul.allow_tf32 = True  # Enable TF32
-# torch.backends.cudnn.allow_tf32 = True
 
 def train(rank, a, h):
     if h.num_gpus > 1:
@@ -315,9 +313,6 @@ def main():
         h.num_gpus = torch.cuda.device_count()
         h.batch_size = int(h.batch_size / h.num_gpus)
         print('Batch size per GPU :', h.batch_size)
-        # Check for bf16 support
-        if not torch.cuda.is_bf16_supported():
-            print("Warning: bfloat16 is not supported on this GPU. Falling back to float32.")
     else:
         print("CUDA not available. bfloat16 requires CUDA support.")
         return
