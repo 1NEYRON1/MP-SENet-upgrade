@@ -10,7 +10,7 @@ import torch
 import librosa
 from env import AttrDict
 from dataset import mag_pha_stft, mag_pha_istft
-from models.model import MPNet
+from models.model import MPNet, MinMPNet
 import soundfile as sf
 from rich.progress import track
 
@@ -32,7 +32,8 @@ def scan_checkpoint(cp_dir, prefix):
     return sorted(cp_list)[-1]
 
 def inference(a):
-    model = MPNet(h).to(device)
+    model_class = MinMPNet if hasattr(h, 'mingru') and h.mingru else MPNet
+    model = model_class(h).to(device)
 
     state_dict = load_checkpoint(a.checkpoint_file, device)
     model.load_state_dict(state_dict['generator'])
