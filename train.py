@@ -23,7 +23,7 @@ from utils import scan_checkpoint, load_checkpoint, save_checkpoint
 
 torch.backends.cudnn.benchmark = True
 torch.set_float32_matmul_precision('high')
-torch._inductor.config.triton.cudagraph_skip_dynamic_graphs = True
+#torch._inductor.config.triton.cudagraph_skip_dynamic_graphs = True
 
 logger = logging.getLogger('train')
 
