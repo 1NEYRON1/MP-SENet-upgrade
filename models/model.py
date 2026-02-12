@@ -154,7 +154,6 @@ class MPNet(nn.Module):
     def forward(self, noisy_amp, noisy_pha): # [B, F, T]
 
         x = torch.stack((noisy_amp, noisy_pha), dim=-1).permute(0, 3, 2, 1) # [B, 2, T, F]
-
         x = self.dense_encoder(x)
 
         for i in range(self.num_tscblocks):
