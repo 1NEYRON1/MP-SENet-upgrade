@@ -12,7 +12,7 @@
     "num_tsconformers": 4,
     "beta": 2.0,
 
-    "use_rope": true,
+    "use_rope": false,
 
     "sampling_rate": 16000,
     "segment_size": 32000,
