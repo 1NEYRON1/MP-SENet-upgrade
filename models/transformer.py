@@ -6,13 +6,13 @@ from torch.nn import MultiheadAttention, GRU, Linear, LayerNorm, Dropout
 class FFN(nn.Module):
     def __init__(self, d_model, bidirectional=True, dropout=0):
         super(FFN, self).__init__()
-        self.gru = GRU(d_model, d_model*2, 1, bidirectional=bidirectional)
+        self.gru = GRU(d_model, d_model*2, 1, bidirectional=bidirectional, batch_first=True)
         if bidirectional:
             self.linear = Linear(d_model*2*2, d_model)
         else:
             self.linear = Linear(d_model*2, d_model)
         self.dropout = Dropout(dropout)
-    
+
     def forward(self, x):
         self.gru.flatten_parameters()
         x, _ = self.gru(x)
@@ -28,9 +28,9 @@ class TransformerBlock(nn.Module):
         super(TransformerBlock, self).__init__()
 
         self.norm1 = LayerNorm(d_model)
-        self.attention = MultiheadAttention(d_model, n_heads, dropout=dropout)
+        self.attention = MultiheadAttention(d_model, n_heads, dropout=dropout, batch_first=True)
         self.dropout1 = Dropout(dropout)
-        
+
         self.norm2 = LayerNorm(d_model)
         self.ffn = FFN(d_model, bidirectional=bidirectional)
         self.dropout2 = Dropout(dropout)
@@ -41,7 +41,8 @@ class TransformerBlock(nn.Module):
         xt = self.norm1(x)
         xt, _ = self.attention(xt, xt, xt,
                                attn_mask=attn_mask,
-                               key_padding_mask=key_padding_mask)
+                               key_padding_mask=key_padding_mask,
+                               need_weights=False)
         x = x + self.dropout1(xt)
 
         xt = self.norm2(x)
@@ -51,7 +52,7 @@ class TransformerBlock(nn.Module):
         x = self.norm3(x)
 
         return x
-    
+
 def main():
     x = torch.randn(4, 64, 401, 201)
     b, c, t, f = x.size()

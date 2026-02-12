@@ -1,8 +1,15 @@
 import torch.nn as nn
-from einops.layers.torch import Rearrange
+import torch.nn.functional as F
 
 def get_padding(kernel_size, dilation=1):
     return int((kernel_size*dilation - dilation)/2)
+
+class Transpose(nn.Module):
+    def __init__(self, dim0, dim1):
+        super().__init__()
+        self.dim0, self.dim1 = dim0, dim1
+    def forward(self, x):
+        return x.transpose(self.dim0, self.dim1)
 
 class FeedForwardModule(nn.Module):
     def __init__(self, dim, mult=4, dropout=0):
@@ -26,15 +33,15 @@ class ConformerConvModule(nn.Module):
         inner_dim = dim * expansion_factor
         self.ccm = nn.Sequential(
             nn.LayerNorm(dim),
-            Rearrange('b n c -> b c n'),
+            Transpose(1, 2),
             nn.Conv1d(dim, inner_dim*2, 1),
             nn.GLU(dim=1),
             nn.Conv1d(inner_dim, inner_dim, kernel_size=kernel_size,
-                      padding=get_padding(kernel_size), groups=inner_dim), # DepthWiseConv1d 
+                      padding=get_padding(kernel_size), groups=inner_dim), # DepthWiseConv1d
             nn.BatchNorm1d(inner_dim),
             nn.SiLU(),
             nn.Conv1d(inner_dim, dim, 1),
-            Rearrange('b c n -> b n c'),
+            Transpose(1, 2),
             nn.Dropout(dropout)
         )
 
@@ -45,19 +52,17 @@ class ConformerConvModule(nn.Module):
 class AttentionModule(nn.Module):
     def __init__(self, dim, n_head=8, dropout=0.):
         super(AttentionModule, self).__init__()
-        self.attn = nn.MultiheadAttention(dim, n_head, dropout=dropout)
         self.layernorm = nn.LayerNorm(dim)
+        self.attn = nn.MultiheadAttention(dim, n_head, dropout=dropout, batch_first=True)
 
     def forward(self, x, attn_mask=None, key_padding_mask=None):
         x = self.layernorm(x)
-        x, _ = self.attn(x, x, x, 
-                         attn_mask=attn_mask,
-                         key_padding_mask=key_padding_mask)
+        x, _ = self.attn(x, x, x, attn_mask=attn_mask, key_padding_mask=key_padding_mask, need_weights=False)
         return x
 
 
 class ConformerBlock(nn.Module):
-    def __init__(self, dim, n_head=8, ffm_mult=4, ccm_expansion_factor=2, ccm_kernel_size=31, 
+    def __init__(self, dim, n_head=8, ffm_mult=4, ccm_expansion_factor=2, ccm_kernel_size=31,
                  ffm_dropout=0., attn_dropout=0., ccm_dropout=0.):
         super(ConformerBlock, self).__init__()
         self.ffm1 = FeedForwardModule(dim, ffm_mult, dropout=ffm_dropout)

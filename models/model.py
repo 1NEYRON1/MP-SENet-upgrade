@@ -132,14 +132,14 @@ class TSTransformerBlock(nn.Module):
 
 
 class MPNet(nn.Module):
-    def __init__(self, h, num_tsblocks=4):
+    def __init__(self, h):
         super(MPNet, self).__init__()
         self.h = h
-        self.num_tscblocks = num_tsblocks
+        self.num_tscblocks = h.num_tsblocks
         self.dense_encoder = DenseEncoder(h, in_channel=2)
 
         self.TSTransformer = nn.ModuleList([])
-        for i in range(num_tsblocks):
+        for i in range(h.num_tsblocks):
             self.TSTransformer.append(TSTransformerBlock(h))
         
         self.mask_decoder = MaskDecoder(h, out_channel=1)
