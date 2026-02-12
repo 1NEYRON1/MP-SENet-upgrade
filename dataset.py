@@ -18,8 +18,8 @@ def mag_pha_stft(y, n_fft, hop_size, win_size, compress_factor=1.0, center=True)
     stft_spec = torch.stft(y, n_fft, hop_length=hop_size, win_length=win_size, window=hann_window,
                            center=center, pad_mode='reflect', normalized=False, return_complex=True)
     stft_spec = torch.view_as_real(stft_spec)
-    mag = torch.sqrt(stft_spec.pow(2).sum(-1)+(1e-9))
-    pha = torch.atan2(stft_spec[:, :, :, 1]+(1e-10), stft_spec[:, :, :, 0]+(1e-5))
+    mag = torch.sqrt(torch.clamp(stft_spec.pow(2).sum(-1), min=1e-9))
+    pha = torch.atan2(stft_spec[:, :, :, 1], stft_spec[:, :, :, 0])
     # Magnitude Compression
     mag = torch.pow(mag, compress_factor)
     com = torch.stack((mag*torch.cos(pha), mag*torch.sin(pha)), dim=-1)

@@ -13,6 +13,7 @@ from torch.utils.data import DistributedSampler, DataLoader
 from torch.distributed import init_process_group
 from torch.nn.parallel import DistributedDataParallel
 from torch.amp import autocast
+from torch.optim.lr_scheduler import ExponentialLR
 from types import SimpleNamespace
 from rich.progress import Progress, TextColumn, BarColumn, MofNCompleteColumn, TimeRemainingColumn
 from rich.console import Console
@@ -70,8 +71,10 @@ def train(a, h):
     else:
         state_dict_g = load_checkpoint(cp_g, device)
         state_dict_do = load_checkpoint(cp_do, device)
-        generator.load_state_dict(state_dict_g['generator'])
-        discriminator.load_state_dict(state_dict_do['discriminator'])
+        gen_state = {k.removeprefix('_orig_mod.'): v for k, v in state_dict_g['generator'].items()}
+        disc_state = {k.removeprefix('_orig_mod.'): v for k, v in state_dict_do['discriminator'].items()}
+        generator.load_state_dict(gen_state)
+        discriminator.load_state_dict(disc_state)
         steps = state_dict_do['steps'] + 1
         last_epoch = state_dict_do['epoch']
 
@@ -89,8 +92,8 @@ def train(a, h):
         optim_g.load_state_dict(state_dict_do['optim_g'])
         optim_d.load_state_dict(state_dict_do['optim_d'])
 
-    scheduler_g = torch.optim.lr_scheduler.ExponentialLR(optim_g, gamma=h.lr_decay, last_epoch=last_epoch)
-    scheduler_d = torch.optim.lr_scheduler.ExponentialLR(optim_d, gamma=h.lr_decay, last_epoch=last_epoch)
+    scheduler_g = ExponentialLR(optim_g, gamma=h.lr_decay, last_epoch=last_epoch)
+    scheduler_d = ExponentialLR(optim_d, gamma=h.lr_decay, last_epoch=last_epoch)
 
     training_indexes, validation_indexes = get_dataset_filelist(a)
 
@@ -123,7 +126,7 @@ def train(a, h):
     generator.train()
     discriminator.train()
 
-    async_pesq = AsyncPESQ(max_workers=1)
+    async_pesq = AsyncPESQ(max_workers=4)
     best_pesq = 0
     one_labels = torch.ones(h.batch_size, device=device)
 
@@ -160,7 +163,7 @@ def train(a, h):
             mag_g_hat, pha_g_hat, com_g_hat = mag_pha_stft(audio_g, h.n_fft, h.hop_size, h.win_size, h.compress_factor)
 
             audio_list_r, audio_list_g = list(clean_audio.cpu().numpy()), list(audio_g.detach().cpu().numpy())
-            batch_pesq_score = async_pesq.submit(audio_list_r, audio_list_g, h.sampling_rate)
+            async_pesq.submit(audio_list_r, audio_list_g, h.sampling_rate)
 
             # Discriminator
             optim_d.zero_grad()
@@ -169,6 +172,7 @@ def train(a, h):
                 metric_g = discriminator(clean_mag, mag_g_hat.detach())
                 loss_disc_r = F.mse_loss(one_labels, metric_r.flatten())
 
+                batch_pesq_score = async_pesq.collect()
                 if batch_pesq_score is not None:
                     loss_disc_g = F.mse_loss(batch_pesq_score.to(device), metric_g.flatten())
                 else:
@@ -196,7 +200,7 @@ def train(a, h):
                 metric_g = discriminator(clean_mag, mag_g_hat)
                 loss_metric = F.mse_loss(metric_g.flatten(), one_labels)
 
-            loss_gen_all = loss_mag * 0.9 + loss_pha * 0.3  + loss_com * 0.1 + loss_stft * 0.1 + loss_metric * 0.05 + loss_time * 0.2
+                loss_gen_all = loss_mag * 0.9 + loss_pha * 0.3 + loss_com * 0.1 + loss_stft * 0.1 + loss_metric * 0.05 + loss_time * 0.2
 
             loss_gen_all.backward()
             optim_g.step()
@@ -205,7 +209,7 @@ def train(a, h):
                 progress.update(task_id, advance=1)
 
                 if steps % a.stdout_interval == 0:
-                    pesq_str = f"PESQ={batch_pesq_score.mean().item():.2f} " if batch_pesq_score is not None else ""
+                    pesq_str = f"PESQ={batch_pesq_score.mean().item() * 3.5 + 1:.2f} " if batch_pesq_score is not None else ""
                     desc = (f"{pesq_str}Gen={loss_gen_all.item():.3f} Disc={loss_disc_all.item():.3f} "
                             f"Mag={loss_mag.item():.3f} Pha={loss_pha.item():.3f} "
                             f"Time={loss_time.item():.3f}")
@@ -224,8 +228,8 @@ def train(a, h):
                     checkpoint_path = "{}/do_{:08d}".format(a.checkpoint_path, steps)
                     save_checkpoint(checkpoint_path,
                                     {'discriminator': (discriminator.module if distributed else discriminator).state_dict(),
-                                     'optim_g': optim_g.state_dict(), 'optim_d': optim_d.state_dict(), 'steps': steps,
-                                     'epoch': epoch})
+                                     'optim_g': optim_g.state_dict(), 'optim_d': optim_d.state_dict(),
+                                     'steps': steps, 'epoch': epoch})
 
                 # Tensorboard summary logging
                 if steps % a.summary_interval == 0:
@@ -237,6 +241,7 @@ def train(a, h):
                     sw.add_scalar("Training/Complex Loss", loss_com.item() / 2, steps)
                     sw.add_scalar("Training/Time Loss", loss_time.item(), steps)
                     sw.add_scalar("Training/Consistency Loss", loss_stft.item() / 2, steps)
+                    sw.add_scalar("Training/Learning Rate", scheduler_g.get_last_lr()[0], steps)
 
                 # Validation
                 if steps % a.validation_interval == 0 and steps != 0:

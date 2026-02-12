@@ -70,19 +70,18 @@ class AsyncPESQ:
     def __init__(self, max_workers=4):
         self.executor = ProcessPoolExecutor(max_workers=max_workers)
         self._futures = None
-        self._last_result = None
 
     def submit(self, clean_list, noisy_list, sr=16000):
-        if self._futures is not None:
-            self._last_result = self._collect()
         self._futures = [
             self.executor.submit(cal_pesq, c, n, sr)
             for c, n in zip(clean_list, noisy_list)
         ]
-        return self._last_result
 
-    def _collect(self):
+    def collect(self):
+        if self._futures is None:
+            return None
         scores = np.array([f.result() for f in self._futures])
+        self._futures = None
         if -1 in scores:
             return None
         return torch.FloatTensor((scores - 1) / 3.5)

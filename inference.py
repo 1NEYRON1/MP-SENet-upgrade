@@ -27,7 +27,8 @@ def inference(a):
     model = MPNet(h).to(device)
 
     state_dict = load_checkpoint(a.checkpoint_file, device)
-    model.load_state_dict(state_dict['generator'])
+    gen_state = {k.removeprefix('_orig_mod.'): v for k, v in state_dict['generator'].items()}
+    model.load_state_dict(gen_state)
 
     model = torch.compile(model, dynamic=True)
 
@@ -51,7 +52,7 @@ def inference(a):
 
             output_file = os.path.join(a.output_dir, index)
 
-            AudioEncoder(samples=audio_g.unsqueeze(0).cpu(), sample_rate=h.sampling_rate).to_file(output_file)
+            AudioEncoder(samples=audio_g.cpu(), sample_rate=h.sampling_rate).to_file(output_file)
 
 
 def main():
