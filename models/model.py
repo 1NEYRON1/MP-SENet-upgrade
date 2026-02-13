@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 from models.transformer import TransformerBlock
+from mingru import MinMPNet
 from models.rope_attn import RopeTransformerBlock
 from utils import LearnableSigmoid2d
 from pesq import pesq
