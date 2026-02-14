@@ -21,6 +21,7 @@ from dataset import Dataset, mag_pha_stft, mag_pha_istft, get_dataset_filelist
 from models.model import MPNet, pesq_score, phase_losses
 from models.discriminator import MetricDiscriminator, AsyncPESQ
 from utils import scan_checkpoint, load_checkpoint, save_checkpoint
+from pcs import build_pcs_gains
 
 torch.backends.cudnn.benchmark = True
 torch.set_float32_matmul_precision('high')
@@ -130,6 +131,11 @@ def train(a, h):
     best_pesq = 0
     one_labels = torch.ones(h.batch_size, device=device)
 
+    pcs_enabled = getattr(h, 'pcs_enabled', False)
+    if pcs_enabled:
+        pcs_w = build_pcs_gains(h.n_fft, h.sampling_rate).to(device)
+        pcs_w = pcs_w.view(1, -1, 1)  # [1, F, 1] for broadcast with [B, F, T]
+
     for epoch in range(max(0, last_epoch), a.training_epochs):
         if distributed:
             train_sampler.set_epoch(epoch)
@@ -185,8 +191,11 @@ def train(a, h):
             # Generator
             optim_g.zero_grad()
             with autocast('cuda', dtype=torch.bfloat16):
-                # L2 Magnitude Loss
-                loss_mag = F.mse_loss(clean_mag, mag_g)
+                # L2 Magnitude Loss (PCS-weighted if enabled)
+                if pcs_enabled:
+                    loss_mag = torch.mean(pcs_w * (clean_mag - mag_g) ** 2)
+                else:
+                    loss_mag = F.mse_loss(clean_mag, mag_g)
                 # Anti-wrapping Phase Loss
                 loss_ip, loss_gd, loss_iaf = phase_losses(clean_pha, pha_g)
                 loss_pha = loss_ip + loss_gd + loss_iaf
