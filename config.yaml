@@ -1,3 +1,22 @@
+# Architecture
+num_shared_tsblocks: 2
+num_branch_tsblocks: 1
+
+# Loss weights (current baseline)
+loss_mag_w: 0.9
+loss_pha_w: 0.3
+loss_com_w: 0.1
+loss_stft_w: 0.1
+loss_metric_w: 0.05
+loss_time_w: 0.2
+# Alternative weights (phase-aware experiment):
+# loss_mag_w: 0.7
+# loss_pha_w: 0.5
+# loss_com_w: 0.2
+# loss_stft_w: 0.1
+# loss_metric_w: 0.1
+# loss_time_w: 0.3
+
 batch_size: 2
 learning_rate: 0.0005
 adam_b1: 0.8

@@ -2,6 +2,7 @@ from __future__ import absolute_import, division, print_function, unicode_litera
 import os
 import argparse
 import yaml
+import numpy as np
 import torch
 from torch.amp import autocast
 from torchcodec.decoders import AudioDecoder
@@ -10,6 +11,26 @@ from types import SimpleNamespace
 from dataset import mag_pha_stft, mag_pha_istft
 from models.model import MPNet
 from rich.progress import track
+
+
+class PCS400(torch.nn.Module):
+    """Perceptual Contrast Stretching for n_fft=400 (201 frequency bins)."""
+    def __init__(self):
+        super().__init__()
+        w = np.ones(201)
+        w[0:3] = 1.0
+        w[3:5] = 1.070175439
+        w[5:8] = 1.182456140
+        w[8:10] = 1.287719298
+        w[10:110] = 1.4
+        w[110:130] = 1.322807018
+        w[130:160] = 1.238596491
+        w[160:190] = 1.161403509
+        w[190:] = 1.077192982
+        self.register_buffer('weights', torch.from_numpy(w).float().unsqueeze(0).unsqueeze(-1))
+
+    def forward(self, amp):  # [B, F, T]
+        return torch.exp(self.weights * torch.log(amp + 1e-9))
 
 torch.set_float32_matmul_precision('high')
 
@@ -38,6 +59,9 @@ def inference(a):
 
     model.eval()
 
+    if a.use_pcs:
+        pcs = PCS400().to(device)
+
     with torch.no_grad():
         for index in track(test_indexes):
             wav_path = os.path.join(a.input_noisy_wavs_dir, index)
@@ -47,7 +71,11 @@ def inference(a):
             noisy_amp, noisy_pha, noisy_com = mag_pha_stft(noisy_wav, h.n_fft, h.hop_size, h.win_size, h.compress_factor)
             with autocast('cuda', dtype=torch.bfloat16):
                 amp_g, pha_g, com_g = model(noisy_amp, noisy_pha)
-            audio_g = mag_pha_istft(amp_g.float(), pha_g.float(), h.n_fft, h.hop_size, h.win_size, h.compress_factor)
+            amp_g = amp_g.float()
+            pha_g = pha_g.float()
+            if a.use_pcs:
+                amp_g = pcs(amp_g)
+            audio_g = mag_pha_istft(amp_g, pha_g, h.n_fft, h.hop_size, h.win_size, h.compress_factor)
             audio_g = audio_g / norm_factor
 
             output_file = os.path.join(a.output_dir, index)
@@ -62,6 +90,7 @@ def main():
     parser.add_argument('--input_noisy_wavs_dir', default='/work/VoiceBank+DEMAND/testset_noisy')
     parser.add_argument('--output_dir', default='../generated_files')
     parser.add_argument('--checkpoint_file', required=True)
+    parser.add_argument('--use_pcs', action='store_true')
     a = parser.parse_args()
 
     config_file = os.path.join(os.path.split(a.checkpoint_file)[0], 'config.yaml')

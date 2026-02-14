@@ -24,12 +24,13 @@ class FFN(nn.Module):
 
 
 class TransformerBlock(nn.Module):
-    def __init__(self, d_model, n_heads, bidirectional=True, dropout=0):
+    def __init__(self, d_model, n_heads, bidirectional=True, dropout=0, is_cross_attention=False):
         super(TransformerBlock, self).__init__()
 
         self.norm1 = LayerNorm(d_model)
         self.attention = MultiheadAttention(d_model, n_heads, dropout=dropout, batch_first=True)
         self.dropout1 = Dropout(dropout)
+        self.norm_kv = LayerNorm(d_model) if is_cross_attention else None
 
         self.norm2 = LayerNorm(d_model)
         self.ffn = FFN(d_model, bidirectional=bidirectional)
@@ -37,12 +38,16 @@ class TransformerBlock(nn.Module):
 
         self.norm3 = LayerNorm(d_model)
 
-    def forward(self, x, attn_mask=None, key_padding_mask=None):
+    def forward(self, x, kv=None, attn_mask=None, key_padding_mask=None):
         xt = self.norm1(x)
-        xt, _ = self.attention(xt, xt, xt,
-                               attn_mask=attn_mask,
-                               key_padding_mask=key_padding_mask,
-                               need_weights=False)
+        if kv is not None and self.norm_kv is not None:
+            kv_normed = self.norm_kv(kv)
+            xt, _ = self.attention(xt, kv_normed, kv_normed, need_weights=False)
+        else:
+            xt, _ = self.attention(xt, xt, xt,
+                                   attn_mask=attn_mask,
+                                   key_padding_mask=key_padding_mask,
+                                   need_weights=False)
         x = x + self.dropout1(xt)
 
         xt = self.norm2(x)

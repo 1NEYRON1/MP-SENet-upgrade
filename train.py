@@ -42,7 +42,7 @@ def train(a, h):
     torch.cuda.manual_seed(h.seed)
 
     generator = MPNet(h).to(device)
-    discriminator = MetricDiscriminator().to(device)
+    discriminator = MetricDiscriminator(in_channel=4).to(device)
 
     if rank == 0:
         console = Console()
@@ -167,9 +167,11 @@ def train(a, h):
 
             # Discriminator
             optim_d.zero_grad()
+            clean_ri = clean_com.permute(0, 3, 1, 2)                # [B, F, T, 2] → [B, 2, F, T]
+            com_g_hat_ri = com_g_hat.detach().permute(0, 3, 1, 2)
             with autocast('cuda', dtype=torch.bfloat16):
-                metric_r = discriminator(clean_mag, clean_mag)
-                metric_g = discriminator(clean_mag, mag_g_hat.detach())
+                metric_r = discriminator(clean_ri, clean_ri)
+                metric_g = discriminator(clean_ri, com_g_hat_ri)
                 loss_disc_r = F.mse_loss(one_labels, metric_r.flatten())
 
                 batch_pesq_score = async_pesq.collect()
@@ -197,10 +199,13 @@ def train(a, h):
                 # Time Loss
                 loss_time = F.l1_loss(clean_audio, audio_g)
                 # Metric Loss
-                metric_g = discriminator(clean_mag, mag_g_hat)
+                com_g_hat_ri_gen = com_g_hat.permute(0, 3, 1, 2)    # without detach
+                metric_g = discriminator(clean_ri, com_g_hat_ri_gen)
                 loss_metric = F.mse_loss(metric_g.flatten(), one_labels)
 
-                loss_gen_all = loss_mag * 0.9 + loss_pha * 0.3 + loss_com * 0.1 + loss_stft * 0.1 + loss_metric * 0.05 + loss_time * 0.2
+                loss_gen_all = (loss_mag * h.loss_mag_w + loss_pha * h.loss_pha_w +
+                                loss_com * h.loss_com_w + loss_stft * h.loss_stft_w +
+                                loss_metric * h.loss_metric_w + loss_time * h.loss_time_w)
 
             loss_gen_all.backward()
             optim_g.step()

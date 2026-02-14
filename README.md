@@ -17,29 +17,104 @@ uv sync
 ## Training
 
 Single GPU:
-```
-uv run python train.py --config config.yaml
-```
-
-Multi-GPU (via torchrun):
-```
- uv run torchrun --nproc-per-node=gpu train.py --config config.yaml
+```bash
+uv run python train.py
 ```
 
-Checkpoints and copy of the configuration file are saved in the `cp_model` directory by default.<br>
-You can change the path by adding `--checkpoint_path` option.
+Multi-GPU via `torchrun` (all available GPUs):
+```bash
+uv run torchrun --nproc-per-node=gpu train.py
+```
+
+Multi-GPU with explicit GPU count:
+```bash
+uv run torchrun --nproc-per-node=2 train.py
+```
+
+### Training arguments
+
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `--config` | `config.yaml` | Path to config file |
+| `--checkpoint_path` | `cp_model` | Directory for checkpoints and logs |
+| `--input_clean_wavs_dir` | `/work/VoiceBank+DEMAND/wav_clean` | Clean waveforms directory |
+| `--input_noisy_wavs_dir` | `/work/VoiceBank+DEMAND/wav_noisy` | Noisy waveforms directory |
+| `--input_training_file` | `/work/VoiceBank+DEMAND/training.txt` | Training file list |
+| `--input_validation_file` | `/work/VoiceBank+DEMAND/test.txt` | Validation file list |
+| `--training_epochs` | `400` | Total epochs |
+| `--checkpoint_interval` | `5000` | Save checkpoint every N steps |
+| `--validation_interval` | `5000` | Run validation every N steps |
+| `--best_checkpoint_start_epoch` | `40` | Start saving best checkpoint after this epoch |
+
+Checkpoints and a copy of `config.yaml` are saved to `--checkpoint_path`.
+TensorBoard logs are in `<checkpoint_path>/logs/`.
+
+### Resuming training
+
+Training resumes automatically if checkpoints (`g_*` and `do_*`) exist in `--checkpoint_path`:
+```bash
+uv run torchrun --nproc-per-node=gpu train.py --checkpoint_path cp_model
+```
+
+### Monitoring
+
+```bash
+uv run tensorboard --logdir cp_model/logs
+```
 
 ## Inference
+
+```bash
+uv run python inference.py --checkpoint_file cp_model/g_best
 ```
-uv run python inference.py --checkpoint_file [generator checkpoint file path]
+
+With PCS (Perceptual Contrast Stretching) post-processing:
+```bash
+uv run python inference.py --checkpoint_file cp_model/g_best --use_pcs
 ```
-You can also use the pretrained best checkpoint files we provide in the `best_ckpt` directory.
-<br>
-Generated wav files are saved in `generated_files` by default.
-You can change the path by adding `--output_dir` option.<br>
-Here is an example:
+
+### Inference arguments
+
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `--checkpoint_file` | *(required)* | Path to generator checkpoint |
+| `--input_noisy_wavs_dir` | `/work/VoiceBank+DEMAND/testset_noisy` | Input noisy waveforms |
+| `--output_dir` | `../generated_files` | Output directory for enhanced waveforms |
+| `--use_pcs` | `false` | Enable PCS post-processing |
+
+The config is loaded automatically from the same directory as the checkpoint file.
+
+## Evaluation
+
+Compute metrics for a single run:
+```bash
+cd cal_metrics
+uv run python cal_metrics_vb.py \
+  --clean_wav_dir /work/VoiceBank+DEMAND/testset_clean \
+  --noisy_wav_dir ../generated_files
 ```
-uv run python inference.py --checkpoint_file best_ckpt/g_best_vb --output_dir generated_files/MP-SENet_VB
+
+Compare two runs (e.g. baseline vs PCS):
+```bash
+cd cal_metrics
+uv run python cal_metrics_vb.py \
+  --clean_wav_dir /work/VoiceBank+DEMAND/testset_clean \
+  --noisy_wav_dir ../generated_baseline \
+  --compare_dir ../generated_pcs
+```
+
+Output:
+```
+-------------------------------------------------
+Metric     |   Baseline |        PCS |      Delta
+-------------------------------------------------
+PESQ       |     3.5905 |     3.6281 | +   0.0376
+CSIG       |     4.7213 |     4.7191 | -   0.0022
+CBAK       |     3.9147 |     3.6081 | -   0.3066
+COVL       |     4.2346 |     4.2499 | +   0.0153
+SSNR       |    10.7145 |     5.5693 | -   5.1452
+STOI       |     0.9615 |     0.9614 | -   0.0001
+-------------------------------------------------
 ```
 
 ## Model Structure

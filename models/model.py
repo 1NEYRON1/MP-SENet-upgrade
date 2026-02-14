@@ -131,30 +131,96 @@ class TSTransformerBlock(nn.Module):
         return x
 
 
+class ChannelProjection(nn.Module):
+    """Linear projection over channel dim — equivalent to Conv2d(c,c,1) but avoids DDP stride warnings."""
+    def __init__(self, channels):
+        super().__init__()
+        self.linear = nn.Linear(channels, channels)
+        self.norm = nn.InstanceNorm2d(channels, affine=True)
+        self.act = nn.PReLU(channels)
+
+    def forward(self, x):  # [B, C, T, F]
+        x = self.linear(x.permute(0, 2, 3, 1)).permute(0, 3, 1, 2)
+        return self.act(self.norm(x))
+
+
+class TSCrossAttentionBlock(nn.Module):
+    def __init__(self, h):
+        super(TSCrossAttentionBlock, self).__init__()
+        d = h.dense_channel
+        self.mag_time_cross = TransformerBlock(d, n_heads=4, is_cross_attention=True)
+        self.mag_freq_cross = TransformerBlock(d, n_heads=4, is_cross_attention=True)
+        self.pha_time_cross = TransformerBlock(d, n_heads=4, is_cross_attention=True)
+        self.pha_freq_cross = TransformerBlock(d, n_heads=4, is_cross_attention=True)
+
+    def forward(self, x_mag, x_pha):  # [B, C, T, F]
+        b, c, t, f = x_mag.size()
+
+        # Time-axis cross-attention: [B*F, T, C]
+        mag_t = x_mag.permute(0, 3, 2, 1).contiguous().view(b*f, t, c)
+        pha_t = x_pha.permute(0, 3, 2, 1).contiguous().view(b*f, t, c)
+        mag_t = self.mag_time_cross(mag_t, kv=pha_t) + mag_t
+        pha_t = self.pha_time_cross(pha_t, kv=mag_t) + pha_t
+
+        # Freq-axis cross-attention: [B*T, F, C]
+        mag_f = mag_t.view(b, f, t, c).permute(0, 2, 1, 3).contiguous().view(b*t, f, c)
+        pha_f = pha_t.view(b, f, t, c).permute(0, 2, 1, 3).contiguous().view(b*t, f, c)
+        mag_f = self.mag_freq_cross(mag_f, kv=pha_f) + mag_f
+        pha_f = self.pha_freq_cross(pha_f, kv=mag_f) + pha_f
+
+        # Back to [B, C, T, F]
+        return (mag_f.view(b, t, f, c).permute(0, 3, 1, 2),
+                pha_f.view(b, t, f, c).permute(0, 3, 1, 2))
+
+
 class MPNet(nn.Module):
     def __init__(self, h):
         super(MPNet, self).__init__()
         self.h = h
-        self.num_tscblocks = h.num_tsblocks
         self.dense_encoder = DenseEncoder(h, in_channel=2)
 
-        self.TSTransformer = nn.ModuleList([])
-        for i in range(h.num_tsblocks):
-            self.TSTransformer.append(TSTransformerBlock(h))
-        
+        # Shared TSTransformerBlocks
+        self.shared_ts = nn.ModuleList([
+            TSTransformerBlock(h) for _ in range(h.num_shared_tsblocks)])
+
+        # Branch projections (Linear instead of Conv2d 1x1 to avoid DDP stride warning)
+        self.mag_proj = ChannelProjection(h.dense_channel)
+        self.pha_proj = ChannelProjection(h.dense_channel)
+
+        # Branch-specific TSTransformerBlocks
+        self.mag_ts = nn.ModuleList([
+            TSTransformerBlock(h) for _ in range(h.num_branch_tsblocks)])
+        self.pha_ts = nn.ModuleList([
+            TSTransformerBlock(h) for _ in range(h.num_branch_tsblocks)])
+
+        # Cross-attention
+        self.cross_attn = TSCrossAttentionBlock(h)
+
         self.mask_decoder = MaskDecoder(h, out_channel=1)
         self.phase_decoder = PhaseDecoder(h, out_channel=1)
 
-    def forward(self, noisy_amp, noisy_pha): # [B, F, T]
-
-        x = torch.stack((noisy_amp, noisy_pha), dim=-1).permute(0, 3, 2, 1) # [B, 2, T, F]
+    def forward(self, noisy_amp, noisy_pha):  # [B, F, T]
+        x = torch.stack((noisy_amp, noisy_pha), dim=-1).permute(0, 3, 2, 1)  # [B, 2, T, F]
         x = self.dense_encoder(x)
+        encoder_out = x  # Save for skip connection
 
-        for i in range(self.num_tscblocks):
-            x = self.TSTransformer[i](x)
-        
-        denoised_amp = noisy_amp * self.mask_decoder(x)
-        denoised_pha = self.phase_decoder(x)
+        for block in self.shared_ts:
+            x = block(x)
+
+        x_mag = self.mag_proj(x)
+        x_pha = self.pha_proj(x)
+
+        for block in self.mag_ts:
+            x_mag = block(x_mag)
+        for block in self.pha_ts:
+            x_pha = block(x_pha)
+
+        x_mag, x_pha = self.cross_attn(x_mag, x_pha)
+
+        # Skip connections: encoder features → decoder input
+        denoised_amp = noisy_amp * self.mask_decoder(x_mag + encoder_out)
+        denoised_pha = self.phase_decoder(x_pha + encoder_out)
+
         denoised_com = torch.stack((denoised_amp*torch.cos(denoised_pha),
                                     denoised_amp*torch.sin(denoised_pha)), dim=-1)
 
@@ -171,7 +237,7 @@ def phase_losses(phase_r, phase_g):
 
 def anti_wrapping_function(x):
 
-    return torch.abs(x - torch.round(x / (2 * np.pi)) * 2 * np.pi)
+    return torch.abs(torch.remainder(x + torch.pi, 2 * torch.pi) - torch.pi)
 
 
 def pesq_score(utts_r, utts_g, h):
