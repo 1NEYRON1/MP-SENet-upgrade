@@ -11,6 +11,7 @@
     "compress_factor": 0.3, 
     "num_tsconformers": 4,
     "beta": 2.0,
+    "waveform": "stack",
 
     "sampling_rate": 16000,
     "segment_size": 32000,
