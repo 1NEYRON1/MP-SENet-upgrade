@@ -14,7 +14,9 @@ from rich.progress import track
 
 
 class PCS400(torch.nn.Module):
-    """Perceptual Contrast Stretching for n_fft=400 (201 frequency bins)."""
+    """Perceptual Contrast Stretching for n_fft=400 (201 frequency bins).
+    Reshapes spectral profile (boosting mid-frequencies) while preserving
+    per-frame energy to avoid amplitude explosion on raw STFT magnitudes."""
     def __init__(self):
         super().__init__()
         w = np.ones(201)
@@ -29,8 +31,11 @@ class PCS400(torch.nn.Module):
         w[190:] = 1.077192982
         self.register_buffer('weights', torch.from_numpy(w).float().unsqueeze(0).unsqueeze(-1))
 
-    def forward(self, amp):  # [B, F, T]
-        return torch.exp(self.weights * torch.log(amp + 1e-9))
+    def forward(self, mag):  # [B, F, T] decompressed magnitude
+        mag_pcs = torch.exp(self.weights * torch.log(mag + 1e-9))
+        energy_in = mag.norm(dim=1, keepdim=True)
+        energy_out = mag_pcs.norm(dim=1, keepdim=True)
+        return mag_pcs * (energy_in / (energy_out + 1e-9))
 
 torch.set_float32_matmul_precision('high')
 
@@ -75,10 +80,10 @@ def inference(a):
                 amp_g, pha_g, com_g = model(noisy_amp, noisy_pha)
             amp_g = amp_g.float()
             pha_g = pha_g.float()
-            mag_decompressed = torch.pow(amp_g, 1.0 / h.compress_factor)
+            mag = torch.pow(amp_g, 1.0 / h.compress_factor)
             if a.use_pcs:
-                mag_decompressed = pcs(mag_decompressed)
-            com = torch.complex(mag_decompressed * torch.cos(pha_g), mag_decompressed * torch.sin(pha_g))
+                mag = pcs(mag)
+            com = torch.complex(mag * torch.cos(pha_g), mag * torch.sin(pha_g))
             audio_g = torch.istft(com, h.n_fft, hop_length=h.hop_size, win_length=h.win_size, window=hann_window, center=True)
             audio_g = audio_g / norm_factor
 
