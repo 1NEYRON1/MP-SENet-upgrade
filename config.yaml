@@ -1,5 +1,5 @@
 # Architecture
-num_shared_tsblocks: 2
+num_shared_tsblocks: 3
 num_branch_tsblocks: 1
 
 # Loss weights (current baseline)
@@ -33,3 +33,4 @@ n_fft: 400
 hop_size: 100
 win_size: 400
 num_workers: 4
+warmup_epochs: 10

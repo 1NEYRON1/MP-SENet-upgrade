@@ -153,24 +153,22 @@ class TSCrossAttentionBlock(nn.Module):
         self.pha_time_cross = TransformerBlock(d, n_heads=4, is_cross_attention=True)
         self.pha_freq_cross = TransformerBlock(d, n_heads=4, is_cross_attention=True)
 
-    def forward(self, x_mag, x_pha):  # [B, C, T, F]
+    def forward(self, x_mag, x_pha):
         b, c, t, f = x_mag.size()
 
-        # Time-axis cross-attention: [B*F, T, C]
         mag_t = x_mag.permute(0, 3, 2, 1).contiguous().view(b*f, t, c)
         pha_t = x_pha.permute(0, 3, 2, 1).contiguous().view(b*f, t, c)
-        mag_t = self.mag_time_cross(mag_t, kv=pha_t) + mag_t
-        pha_t = self.pha_time_cross(pha_t, kv=mag_t) + pha_t
+        mag_t_new = self.mag_time_cross(mag_t, kv=pha_t)
+        pha_t_new = self.pha_time_cross(pha_t, kv=mag_t)
+        mag_t, pha_t = mag_t_new, pha_t_new
 
-        # Freq-axis cross-attention: [B*T, F, C]
         mag_f = mag_t.view(b, f, t, c).permute(0, 2, 1, 3).contiguous().view(b*t, f, c)
         pha_f = pha_t.view(b, f, t, c).permute(0, 2, 1, 3).contiguous().view(b*t, f, c)
-        mag_f = self.mag_freq_cross(mag_f, kv=pha_f) + mag_f
-        pha_f = self.pha_freq_cross(pha_f, kv=mag_f) + pha_f
+        mag_f_new = self.mag_freq_cross(mag_f, kv=pha_f)
+        pha_f_new = self.pha_freq_cross(pha_f, kv=mag_f)
 
-        # Back to [B, C, T, F]
-        return (mag_f.view(b, t, f, c).permute(0, 3, 1, 2),
-                pha_f.view(b, t, f, c).permute(0, 3, 1, 2))
+        return (mag_f_new.view(b, t, f, c).permute(0, 3, 1, 2),
+                pha_f_new.view(b, t, f, c).permute(0, 3, 1, 2))
 
 
 class MPNet(nn.Module):

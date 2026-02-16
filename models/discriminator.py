@@ -37,7 +37,7 @@ def metric_loss(metric_ref, metrics_gen):
 
 
 class MetricDiscriminator(nn.Module):
-    def __init__(self, dim=16, in_channel=4):
+    def __init__(self, dim=16, in_channel=2):
         super(MetricDiscriminator, self).__init__()
         self.layers = nn.Sequential(
             spectral_norm(nn.Conv2d(in_channel, dim, (4,4), (2,2), (1,1), bias=False)),
@@ -62,7 +62,7 @@ class MetricDiscriminator(nn.Module):
         )
 
     def forward(self, x, y):
-        xy = torch.cat([x, y], dim=1)  # x,y are [B, 2, F, T] → [B, 4, F, T]
+        xy = torch.cat([x, y], dim=1)
         return self.layers(xy)
 
 

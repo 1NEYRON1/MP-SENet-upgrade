@@ -13,7 +13,7 @@ from torch.utils.data import DistributedSampler, DataLoader
 from torch.distributed import init_process_group
 from torch.nn.parallel import DistributedDataParallel
 from torch.amp import autocast
-from torch.optim.lr_scheduler import ExponentialLR
+from transformers import get_cosine_schedule_with_warmup
 from types import SimpleNamespace
 from rich.progress import Progress, TextColumn, BarColumn, MofNCompleteColumn, TimeRemainingColumn
 from rich.console import Console
@@ -42,7 +42,7 @@ def train(a, h):
     torch.cuda.manual_seed(h.seed)
 
     generator = MPNet(h).to(device)
-    discriminator = MetricDiscriminator(in_channel=4).to(device)
+    discriminator = MetricDiscriminator().to(device)
 
     if rank == 0:
         console = Console()
@@ -92,8 +92,11 @@ def train(a, h):
         optim_g.load_state_dict(state_dict_do['optim_g'])
         optim_d.load_state_dict(state_dict_do['optim_d'])
 
-    scheduler_g = ExponentialLR(optim_g, gamma=h.lr_decay, last_epoch=last_epoch)
-    scheduler_d = ExponentialLR(optim_d, gamma=h.lr_decay, last_epoch=last_epoch)
+    warmup_epochs = getattr(h, 'warmup_epochs', 10)
+    scheduler_g = get_cosine_schedule_with_warmup(optim_g, num_warmup_steps=warmup_epochs,
+                                                  num_training_steps=a.training_epochs, last_epoch=last_epoch)
+    scheduler_d = get_cosine_schedule_with_warmup(optim_d, num_warmup_steps=warmup_epochs,
+                                                  num_training_steps=a.training_epochs, last_epoch=last_epoch)
 
     training_indexes, validation_indexes = get_dataset_filelist(a)
 
@@ -167,11 +170,10 @@ def train(a, h):
 
             # Discriminator
             optim_d.zero_grad()
-            clean_ri = clean_com.permute(0, 3, 1, 2)                # [B, F, T, 2] → [B, 2, F, T]
-            com_g_hat_ri = com_g_hat.detach().permute(0, 3, 1, 2)
             with autocast('cuda', dtype=torch.bfloat16):
-                metric_r = discriminator(clean_ri, clean_ri)
-                metric_g = discriminator(clean_ri, com_g_hat_ri)
+                clean_mag_4d = clean_mag.unsqueeze(1)
+                metric_r = discriminator(clean_mag_4d, clean_mag_4d)
+                metric_g = discriminator(clean_mag_4d, mag_g_hat.detach().unsqueeze(1))
                 loss_disc_r = F.mse_loss(one_labels, metric_r.flatten())
 
                 batch_pesq_score = async_pesq.collect()
@@ -199,8 +201,7 @@ def train(a, h):
                 # Time Loss
                 loss_time = F.l1_loss(clean_audio, audio_g)
                 # Metric Loss
-                com_g_hat_ri_gen = com_g_hat.permute(0, 3, 1, 2)    # without detach
-                metric_g = discriminator(clean_ri, com_g_hat_ri_gen)
+                metric_g = discriminator(clean_mag_4d, mag_g_hat.unsqueeze(1))
                 loss_metric = F.mse_loss(metric_g.flatten(), one_labels)
 
                 loss_gen_all = (loss_mag * h.loss_mag_w + loss_pha * h.loss_pha_w +
