@@ -15,7 +15,7 @@ from torch.distributed import init_process_group
 from torch.nn.parallel import DistributedDataParallel
 from env import AttrDict, build_env
 from dataset import Dataset, mag_pha_stft, mag_pha_istft, get_dataset_filelist
-from models.model import MPNet, MPNet_waveform, pesq_score, phase_losses
+from models.model import MPNet, pesq_score, phase_losses
 from models.discriminator import MetricDiscriminator, batch_pesq
 from utils import scan_checkpoint, load_checkpoint, save_checkpoint
 
@@ -29,10 +29,7 @@ def train(rank, a, h):
     torch.cuda.manual_seed(h.seed)
     device = torch.device('cuda:{:d}'.format(rank))
     
-    if h.waveform == "stack":
-        generator = MPNet_waveform(h).to(device)
-    else:
-        generator = MPNet(h).to(device)
+    generator = MPNet(h).to(device)
     discriminator = MetricDiscriminator().to(device)
 
     if rank == 0:
@@ -125,7 +122,7 @@ def train(rank, a, h):
             noisy_mag, noisy_pha, noisy_com = mag_pha_stft(noisy_audio, h.n_fft, h.hop_size, h.win_size, h.compress_factor)
 
             # mag_g, pha_g, com_g = generator(noisy_mag, noisy_pha, noisy_com)
-            if h.waveform == "stack":
+            if hasattr(h, 'use_waveform') and h.use_waveform:
                 mag_g, pha_g, com_g = generator(noisy_mag, noisy_pha, noisy_com)
             else:
                 mag_g, pha_g, com_g = generator(noisy_mag, noisy_pha)
@@ -246,7 +243,7 @@ def train(rank, a, h):
                             noisy_mag, noisy_pha, noisy_com = mag_pha_stft(noisy_audio, h.n_fft, h.hop_size, h.win_size, h.compress_factor)
 
                             # mag_g, pha_g, com_g = generator(noisy_mag, noisy_pha)
-                            if h.waveform == "stack":
+                            if hasattr(h, 'use_waveform') and h.use_waveform:
                                 mag_g, pha_g, com_g = generator(noisy_mag, noisy_pha, noisy_com)
                             else:
                                 mag_g, pha_g, com_g = generator(noisy_mag, noisy_pha)
