@@ -14,6 +14,7 @@ from torch.distributed import init_process_group
 from torch.nn.parallel import DistributedDataParallel
 from torch.amp import autocast
 from transformers import get_cosine_schedule_with_warmup
+from torch.profiler import profile, schedule, ProfilerActivity, record_function
 from types import SimpleNamespace
 from rich.progress import Progress, TextColumn, BarColumn, MofNCompleteColumn, TimeRemainingColumn
 from rich.console import Console
@@ -78,8 +79,9 @@ def train(a, h):
         steps = state_dict_do['steps'] + 1
         last_epoch = state_dict_do['epoch']
 
-    generator = torch.compile(generator, mode='reduce-overhead')
-    discriminator = torch.compile(discriminator)
+    if not a.no_compile:
+        generator = torch.compile(generator, mode='reduce-overhead')
+        discriminator = torch.compile(discriminator)
 
     if distributed:
         generator = DistributedDataParallel(generator, device_ids=[local_rank]).to(device)
@@ -137,6 +139,23 @@ def train(a, h):
     best_pesq = 0
     one_labels = torch.ones(h.batch_size, device=device)
 
+    prof_done = [False]
+
+    def trace_handler(prof_obj):
+        prof_obj.export_chrome_trace(os.path.join(a.checkpoint_path, 'trace.json'))
+        if rank == 0:
+            console.print(prof_obj.key_averages().table(sort_by='self_cuda_time_total', row_limit=30))
+        prof_done[0] = True
+
+    prof = profile(
+        activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
+        schedule=schedule(wait=2 * len(train_loader), warmup=3, active=5, repeat=1),
+        on_trace_ready=trace_handler,
+        profile_memory=True,
+        record_shapes=True,
+    )
+    prof.start()
+
     for epoch in range(max(0, last_epoch), a.training_epochs):
         if distributed:
             train_sampler.set_epoch(epoch)
@@ -156,61 +175,68 @@ def train(a, h):
             task_id = progress.add_task("", total=len(train_loader))
 
         for i, batch in enumerate(train_loader):
-            clean_audio, noisy_audio = batch
-            clean_audio = clean_audio.to(device, non_blocking=True)
-            noisy_audio = noisy_audio.to(device, non_blocking=True)
+            with record_function("data_loading"):
+                clean_audio, noisy_audio = batch
+                clean_audio = clean_audio.to(device, non_blocking=True)
+                noisy_audio = noisy_audio.to(device, non_blocking=True)
 
-            clean_mag, clean_pha, clean_com = mag_pha_stft(clean_audio, h.n_fft, h.hop_size, h.win_size, h.compress_factor)
-            noisy_mag, noisy_pha, noisy_com = mag_pha_stft(noisy_audio, h.n_fft, h.hop_size, h.win_size, h.compress_factor)
+            with record_function("stft"):
+                clean_mag, clean_pha, clean_com = mag_pha_stft(clean_audio, h.n_fft, h.hop_size, h.win_size, h.compress_factor)
+                noisy_mag, noisy_pha, noisy_com = mag_pha_stft(noisy_audio, h.n_fft, h.hop_size, h.win_size, h.compress_factor)
 
-            with autocast('cuda', dtype=torch.bfloat16):
-                mag_g, pha_g, com_g = generator(noisy_mag, noisy_pha)
+            with record_function("forward"):
+                with autocast('cuda', dtype=torch.bfloat16):
+                    mag_g, pha_g, com_g = generator(noisy_mag, noisy_pha)
+                audio_g = mag_pha_istft(mag_g.float(), pha_g.float(), h.n_fft, h.hop_size, h.win_size, h.compress_factor)
+                mag_g_hat, pha_g_hat, com_g_hat = mag_pha_stft(audio_g, h.n_fft, h.hop_size, h.win_size, h.compress_factor)
 
-            audio_g = mag_pha_istft(mag_g.float(), pha_g.float(), h.n_fft, h.hop_size, h.win_size, h.compress_factor)
-            mag_g_hat, pha_g_hat, com_g_hat = mag_pha_stft(audio_g, h.n_fft, h.hop_size, h.win_size, h.compress_factor)
-
-            audio_list_r, audio_list_g = list(clean_audio.cpu().numpy()), list(audio_g.detach().cpu().numpy())
-            async_pesq.submit(audio_list_r, audio_list_g, h.sampling_rate)
+            with record_function("pesq_submit"):
+                audio_list_r, audio_list_g = list(clean_audio.cpu().numpy()), list(audio_g.detach().cpu().numpy())
+                async_pesq.submit(audio_list_r, audio_list_g, h.sampling_rate)
 
             # Discriminator
-            optim_d.zero_grad()
-            with autocast('cuda', dtype=torch.bfloat16):
-                metric_r = discriminator(clean_mag, clean_mag)
-                metric_g = discriminator(clean_mag, mag_g_hat.detach())
-                loss_disc_r = F.mse_loss(one_labels, metric_r.flatten())
+            with record_function("discriminator"):
+                optim_d.zero_grad()
+                with autocast('cuda', dtype=torch.bfloat16):
+                    metric_r = discriminator(clean_mag, clean_mag)
+                    metric_g = discriminator(clean_mag, mag_g_hat.detach())
+                    loss_disc_r = F.mse_loss(one_labels, metric_r.flatten())
 
-                batch_pesq_score = async_pesq.collect()
-                if batch_pesq_score is not None:
-                    loss_disc_g = F.mse_loss(batch_pesq_score.to(device), metric_g.flatten())
-                else:
-                    loss_disc_g = torch.tensor(0.0, device=device)
+                    batch_pesq_score = async_pesq.collect()
+                    if batch_pesq_score is not None:
+                        loss_disc_g = F.mse_loss(batch_pesq_score.to(device), metric_g.flatten())
+                    else:
+                        loss_disc_g = torch.tensor(0.0, device=device)
 
-                loss_disc_all = loss_disc_r + loss_disc_g
-            loss_disc_all.backward()
-            optim_d.step()
+                    loss_disc_all = loss_disc_r + loss_disc_g
+                loss_disc_all.backward()
+                optim_d.step()
 
             # Generator
-            optim_g.zero_grad()
-            with autocast('cuda', dtype=torch.bfloat16):
-                # L2 Magnitude Loss
-                loss_mag = F.mse_loss(clean_mag, mag_g)
-                # Anti-wrapping Phase Loss
-                loss_ip, loss_gd, loss_iaf = phase_losses(clean_pha, pha_g)
-                loss_pha = loss_ip + loss_gd + loss_iaf
-                # L2 Complex Loss
-                loss_com = F.mse_loss(clean_com, com_g) * 2
-                # L2 Consistency Loss
-                loss_stft = F.mse_loss(com_g, com_g_hat) * 2
-                # Time Loss
-                loss_time = F.l1_loss(clean_audio, audio_g)
-                # Metric Loss
-                metric_g = discriminator(clean_mag, mag_g_hat)
-                loss_metric = F.mse_loss(metric_g.flatten(), one_labels)
+            with record_function("generator_loss"):
+                optim_g.zero_grad()
+                with autocast('cuda', dtype=torch.bfloat16):
+                    # L2 Magnitude Loss
+                    loss_mag = F.mse_loss(clean_mag, mag_g)
+                    # Anti-wrapping Phase Loss
+                    loss_ip, loss_gd, loss_iaf = phase_losses(clean_pha, pha_g)
+                    loss_pha = loss_ip + loss_gd + loss_iaf
+                    # L2 Complex Loss
+                    loss_com = F.mse_loss(clean_com, com_g) * 2
+                    # L2 Consistency Loss
+                    loss_stft = F.mse_loss(com_g, com_g_hat) * 2
+                    # Time Loss
+                    loss_time = F.l1_loss(clean_audio, audio_g)
+                    # Metric Loss
+                    metric_g = discriminator(clean_mag, mag_g_hat)
+                    loss_metric = F.mse_loss(metric_g.flatten(), one_labels)
 
-                loss_gen_all = loss_mag * 0.9 + loss_pha * 0.3 + loss_com * 0.1 + loss_stft * 0.1 + loss_metric * 0.05 + loss_time * 0.2
+                    loss_gen_all = loss_mag * 0.9 + loss_pha * 0.3 + loss_com * 0.1 + loss_stft * 0.1 + loss_metric * 0.05 + loss_time * 0.2
 
-            loss_gen_all.backward()
-            optim_g.step()
+            with record_function("generator_backward"):
+                loss_gen_all.backward()
+            with record_function("optimizer_step"):
+                optim_g.step()
 
             if rank == 0:
                 progress.update(task_id, advance=1)
@@ -315,6 +341,12 @@ def train(a, h):
                     generator.train()
 
             steps += 1
+            prof.step()
+            if prof_done[0]:
+                break
+
+        if prof_done[0]:
+            break
 
         scheduler_g.step()
         scheduler_d.step()
@@ -326,6 +358,7 @@ def train(a, h):
             console.print(f"Epoch {epoch + 1} done in {mins}m{secs:02d}s | {desc}")
             logger.info('Epoch %d done in %ds', epoch + 1, elapsed)
 
+    prof.stop()
     async_pesq.shutdown()
 
 
@@ -347,6 +380,7 @@ def main():
     parser.add_argument('--summary_interval', default=100, type=int)
     parser.add_argument('--validation_interval', default=5000, type=int)
     parser.add_argument('--best_checkpoint_start_epoch', default=40, type=int)
+    parser.add_argument('--no-compile', action='store_true')
 
     a = parser.parse_args()
 
