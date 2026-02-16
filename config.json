@@ -14,6 +14,8 @@
     
     "use_waveform": true,
 
+    "use_rope": false,
+
     "sampling_rate": 16000,
     "segment_size": 32000,
     "n_fft": 400,
@@ -26,5 +28,7 @@
         "dist_backend": "nccl",
         "dist_url": "tcp://localhost:54321",
         "world_size": 1
-    }
+    },
+
+    "mingru": false
 }

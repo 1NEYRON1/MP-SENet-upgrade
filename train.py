@@ -15,7 +15,7 @@ from torch.distributed import init_process_group
 from torch.nn.parallel import DistributedDataParallel
 from env import AttrDict, build_env
 from dataset import Dataset, mag_pha_stft, mag_pha_istft, get_dataset_filelist
-from models.model import MPNet, pesq_score, phase_losses
+from models.model import MPNet, MinMPNet, pesq_score, phase_losses
 from models.discriminator import MetricDiscriminator, batch_pesq
 from utils import scan_checkpoint, load_checkpoint, save_checkpoint
 
@@ -28,8 +28,9 @@ def train(rank, a, h):
 
     torch.cuda.manual_seed(h.seed)
     device = torch.device('cuda:{:d}'.format(rank))
-    
-    generator = MPNet(h).to(device)
+
+    model_class = MinMPNet if hasattr(h, 'mingru') and h.mingru else MPNet
+    generator = model_class(h).to(device)
     discriminator = MetricDiscriminator().to(device)
 
     if rank == 0:

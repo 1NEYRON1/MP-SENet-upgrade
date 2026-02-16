@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 import numpy as np
 from models.transformer import TransformerBlock
+from mingru import MinMPNet
+from models.rope_attn import RopeTransformerBlock
 from utils import LearnableSigmoid2d
 from pesq import pesq
 from joblib import Parallel, delayed
@@ -118,8 +120,13 @@ class TSTransformerBlock(nn.Module):
     def __init__(self, h):
         super(TSTransformerBlock, self).__init__()
         self.h = h
-        self.time_transformer = TransformerBlock(d_model=h.dense_channel, n_heads=4)
-        self.freq_transformer = TransformerBlock(d_model=h.dense_channel, n_heads=4)
+
+        if hasattr(h, 'use_rope') and h.use_rope:
+            self.time_transformer = RopeTransformerBlock(d_model=h.dense_channel, n_heads=4)
+            self.freq_transformer = RopeTransformerBlock(d_model=h.dense_channel, n_heads=4)
+        else:
+            self.time_transformer = TransformerBlock(d_model=h.dense_channel, n_heads=4)
+            self.freq_transformer = TransformerBlock(d_model=h.dense_channel, n_heads=4)
 
     def forward(self, x):
         b, c, t, f = x.size()
