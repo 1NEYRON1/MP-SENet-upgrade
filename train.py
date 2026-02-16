@@ -105,7 +105,6 @@ def train(rank, a, h):
     best_pesq = 0
 
     for epoch in range(max(0, last_epoch), a.training_epochs):
-        
         if rank == 0:
             start = time.time()
             print("Epoch: {}".format(epoch+1))
@@ -114,6 +113,7 @@ def train(rank, a, h):
             train_sampler.set_epoch(epoch)
 
         for i, batch in enumerate(train_loader):
+            
             if rank == 0:
                 start_b = time.time()
             clean_audio, noisy_audio = batch
@@ -133,6 +133,9 @@ def train(rank, a, h):
 
             audio_g = mag_pha_istft(mag_g, pha_g, h.n_fft, h.hop_size, h.win_size, h.compress_factor)
             mag_g_hat, pha_g_hat, com_g_hat = mag_pha_stft(audio_g, h.n_fft, h.hop_size, h.win_size, h.compress_factor)
+            
+            audio_list_r, audio_list_g = list(clean_audio.cpu().numpy()), list(audio_g.detach().cpu().numpy())
+            batch_pesq_score = batch_pesq(audio_list_r, audio_list_g)
 
             # Discriminator
             optim_d.zero_grad()
@@ -140,10 +143,8 @@ def train(rank, a, h):
             metric_g = discriminator(clean_mag, mag_g_hat.detach())
             loss_disc_r = F.mse_loss(one_labels, metric_r.flatten())
 
-            batch_pesq_score = batch_pesq(clean_audio.cpu().numpy(), audio_g.detach().cpu().numpy())
             if batch_pesq_score is not None:
-                # loss_disc_g = F.mse_loss(torch.tensor(batch_pesq_score, device=device, dtype=torch.bfloat16), metric_g.flatten())
-                loss_disc_g = F.mse_loss(torch.tensor(batch_pesq_score, device=device), metric_g.flatten())
+                loss_disc_g = F.mse_loss(batch_pesq_score.to(device), metric_g.flatten())
             else:
                 print('pesq is None!')
                 loss_disc_g = 0
@@ -160,7 +161,7 @@ def train(rank, a, h):
             #     loss_disc_r = F.mse_loss(one_labels, metric_r.flatten())
             #     loss_disc_g = F.mse_loss(batch_pesq_score.to(device), metric_g.flatten())
             #     loss_disc_all = loss_disc_r + loss_disc_g
-
+            
             #     loss_disc_all.backward()
             #     optim_d.step()
             # else:
@@ -169,7 +170,7 @@ def train(rank, a, h):
 
             # Generator
             optim_g.zero_grad()
-            
+
             # L2 Magnitude Loss
             loss_mag = F.mse_loss(clean_mag, mag_g)
             # Anti-wrapping Phase Loss
@@ -292,6 +293,7 @@ def train(rank, a, h):
         if rank == 0:
             print('Time taken for epoch {} is {} sec\n'.format(epoch + 1, int(time.time() - start)))
 
+            
 def main():
     print('Initializing Training Process..')
 
@@ -334,5 +336,6 @@ def main():
     else:
         train(0, a, h)
 
+        
 if __name__ == '__main__':
     main()
