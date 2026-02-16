@@ -13,7 +13,7 @@ from torch.utils.data import DistributedSampler, DataLoader
 from torch.distributed import init_process_group
 from torch.nn.parallel import DistributedDataParallel
 from torch.amp import autocast
-from torch.optim.lr_scheduler import ExponentialLR
+from transformers import get_cosine_schedule_with_warmup
 from types import SimpleNamespace
 from rich.progress import Progress, TextColumn, BarColumn, MofNCompleteColumn, TimeRemainingColumn
 from rich.console import Console
@@ -92,8 +92,15 @@ def train(a, h):
         optim_g.load_state_dict(state_dict_do['optim_g'])
         optim_d.load_state_dict(state_dict_do['optim_d'])
 
-    scheduler_g = ExponentialLR(optim_g, gamma=h.lr_decay, last_epoch=last_epoch)
-    scheduler_d = ExponentialLR(optim_d, gamma=h.lr_decay, last_epoch=last_epoch)
+    warmup_epochs = getattr(h, 'warmup_epochs', 10)
+    scheduler_g = get_cosine_schedule_with_warmup(optim_g, num_warmup_steps=warmup_epochs,
+                                                  num_training_steps=a.training_epochs, last_epoch=last_epoch)
+    scheduler_d = get_cosine_schedule_with_warmup(optim_d, num_warmup_steps=warmup_epochs,
+                                                  num_training_steps=a.training_epochs, last_epoch=last_epoch)
+
+    if state_dict_do is not None:
+        scheduler_g.load_state_dict(state_dict_do['scheduler_g'])
+        scheduler_d.load_state_dict(state_dict_do['scheduler_d'])
 
     training_indexes, validation_indexes = get_dataset_filelist(a)
 
@@ -229,6 +236,7 @@ def train(a, h):
                     save_checkpoint(checkpoint_path,
                                     {'discriminator': (discriminator.module if distributed else discriminator).state_dict(),
                                      'optim_g': optim_g.state_dict(), 'optim_d': optim_d.state_dict(),
+                                     'scheduler_g': scheduler_g.state_dict(), 'scheduler_d': scheduler_d.state_dict(),
                                      'steps': steps, 'epoch': epoch})
 
                 # Tensorboard summary logging

@@ -2,7 +2,7 @@ batch_size: 2
 learning_rate: 0.0005
 adam_b1: 0.8
 adam_b2: 0.99
-lr_decay: 0.99
+warmup_epochs: 10
 seed: 1234
 dense_channel: 64
 compress_factor: 0.3
