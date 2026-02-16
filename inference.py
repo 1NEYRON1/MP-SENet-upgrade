@@ -62,6 +62,8 @@ def inference(a):
     if a.use_pcs:
         pcs = PCS400().to(device)
 
+    hann_window = torch.hann_window(h.win_size, device=device)
+
     with torch.no_grad():
         for index in track(test_indexes):
             wav_path = os.path.join(a.input_noisy_wavs_dir, index)
@@ -73,9 +75,11 @@ def inference(a):
                 amp_g, pha_g, com_g = model(noisy_amp, noisy_pha)
             amp_g = amp_g.float()
             pha_g = pha_g.float()
+            mag_decompressed = torch.pow(amp_g, 1.0 / h.compress_factor)
             if a.use_pcs:
-                amp_g = pcs(amp_g)
-            audio_g = mag_pha_istft(amp_g, pha_g, h.n_fft, h.hop_size, h.win_size, h.compress_factor)
+                mag_decompressed = pcs(mag_decompressed)
+            com = torch.complex(mag_decompressed * torch.cos(pha_g), mag_decompressed * torch.sin(pha_g))
+            audio_g = torch.istft(com, h.n_fft, hop_length=h.hop_size, win_length=h.win_size, window=hann_window, center=True)
             audio_g = audio_g / norm_factor
 
             output_file = os.path.join(a.output_dir, index)
