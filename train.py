@@ -5,7 +5,6 @@ import os
 import time
 import argparse
 import shutil
-import yaml
 import torch
 import torch.nn.functional as F
 from torch.utils.tensorboard import SummaryWriter
@@ -14,17 +13,15 @@ from torch.distributed import init_process_group
 from torch.nn.parallel import DistributedDataParallel
 from torch.amp import autocast
 from transformers import get_cosine_schedule_with_warmup
-from types import SimpleNamespace
 from rich.progress import Progress, TextColumn, BarColumn, MofNCompleteColumn, TimeRemainingColumn
 from rich.console import Console
 from dataset import Dataset, mag_pha_stft, mag_pha_istft, get_dataset_filelist
 from models.model import MPNet, pesq_score, phase_losses
 from models.discriminator import MetricDiscriminator, AsyncPESQ
-from utils import scan_checkpoint, load_checkpoint, save_checkpoint
+from utils import scan_checkpoint, load_checkpoint, save_checkpoint, load_config, set_seed
 
 torch.backends.cudnn.benchmark = True
 torch.set_float32_matmul_precision('high')
-#torch._inductor.config.triton.cudagraph_skip_dynamic_graphs = True
 
 logger = logging.getLogger('train')
 
@@ -39,17 +36,15 @@ def train(a, h):
     device = torch.device('cuda', local_rank)
     torch.cuda.set_device(device)
 
-    torch.cuda.manual_seed(h.seed)
-
     generator = MPNet(h).to(device)
-    discriminator = MetricDiscriminator().to(device)
+    discriminator = MetricDiscriminator(dim=h.disc_dim, dropout=h.disc_dropout).to(device)
 
     if rank == 0:
         console = Console()
-        os.makedirs(a.checkpoint_path, exist_ok=True)
-        os.makedirs(os.path.join(a.checkpoint_path, 'logs'), exist_ok=True)
+        os.makedirs(h.checkpoint_path, exist_ok=True)
+        os.makedirs(os.path.join(h.checkpoint_path, 'logs'), exist_ok=True)
 
-        fh = logging.FileHandler(os.path.join(a.checkpoint_path, 'train.log'))
+        fh = logging.FileHandler(os.path.join(h.checkpoint_path, 'train.log'))
         fh.setFormatter(logging.Formatter('%(asctime)s | %(message)s', datefmt='%Y-%m-%d %H:%M:%S'))
         logger.setLevel(logging.INFO)
         logger.addHandler(fh)
@@ -57,12 +52,12 @@ def train(a, h):
         num_params = sum(p.numel() for p in generator.parameters())
         logger.info('Generator:\n%s', generator)
         logger.info('Total Parameters: %.3fM', num_params / 1e6)
-        logger.info('Checkpoints directory: %s', a.checkpoint_path)
-        console.print(f'Parameters: [bold]{num_params / 1e6:.3f}M[/bold] | Checkpoints: {a.checkpoint_path}')
+        logger.info('Checkpoints directory: %s', h.checkpoint_path)
+        console.print(f'Parameters: [bold]{num_params / 1e6:.3f}M[/bold] | Checkpoints: {h.checkpoint_path}')
 
-    if os.path.isdir(a.checkpoint_path):
-        cp_g = scan_checkpoint(a.checkpoint_path, 'g_')
-        cp_do = scan_checkpoint(a.checkpoint_path, 'do_')
+    if os.path.isdir(h.checkpoint_path):
+        cp_g = scan_checkpoint(h.checkpoint_path, 'g_')
+        cp_do = scan_checkpoint(h.checkpoint_path, 'do_')
 
     steps = 0
     if cp_g is None or cp_do is None:
@@ -92,20 +87,19 @@ def train(a, h):
         optim_g.load_state_dict(state_dict_do['optim_g'])
         optim_d.load_state_dict(state_dict_do['optim_d'])
 
-    warmup_epochs = getattr(h, 'warmup_epochs', 10)
-    scheduler_g = get_cosine_schedule_with_warmup(optim_g, num_warmup_steps=warmup_epochs,
-                                                  num_training_steps=a.training_epochs, last_epoch=last_epoch)
-    scheduler_d = get_cosine_schedule_with_warmup(optim_d, num_warmup_steps=warmup_epochs,
-                                                  num_training_steps=a.training_epochs, last_epoch=last_epoch)
+    scheduler_g = get_cosine_schedule_with_warmup(optim_g, num_warmup_steps=h.warmup_epochs,
+                                                  num_training_steps=h.epochs, last_epoch=last_epoch)
+    scheduler_d = get_cosine_schedule_with_warmup(optim_d, num_warmup_steps=h.warmup_epochs,
+                                                  num_training_steps=h.epochs, last_epoch=last_epoch)
 
     if state_dict_do is not None:
         scheduler_g.load_state_dict(state_dict_do['scheduler_g'])
         scheduler_d.load_state_dict(state_dict_do['scheduler_d'])
 
-    training_indexes, validation_indexes = get_dataset_filelist(a)
+    training_indexes, validation_indexes = get_dataset_filelist(h)
 
-    trainset = Dataset(training_indexes, a.input_clean_wavs_dir, a.input_noisy_wavs_dir, h.segment_size, h.sampling_rate,
-                       split=True, n_cache_reuse=0, shuffle=not distributed, device=device)
+    trainset = Dataset(training_indexes, h.input_clean_wavs_dir, h.input_noisy_wavs_dir, h.segment_size, h.sampling_rate,
+                       split=True, n_cache_reuse=0, shuffle=not distributed, device=device, seed=h.seed)
 
     train_sampler = DistributedSampler(trainset) if distributed else None
 
@@ -117,7 +111,7 @@ def train(a, h):
                               persistent_workers=True,
                               prefetch_factor=2)
     if rank == 0:
-        validset = Dataset(validation_indexes, a.input_clean_wavs_dir, a.input_noisy_wavs_dir, h.segment_size, h.sampling_rate,
+        validset = Dataset(validation_indexes, h.input_clean_wavs_dir, h.input_noisy_wavs_dir, h.segment_size, h.sampling_rate,
                            split=False, shuffle=False, n_cache_reuse=0, device=device)
 
         validation_loader = DataLoader(validset, num_workers=1, shuffle=False,
@@ -128,16 +122,16 @@ def train(a, h):
                                        persistent_workers=True,
                                        prefetch_factor=2)
 
-        sw = SummaryWriter(os.path.join(a.checkpoint_path, 'logs'))
+        sw = SummaryWriter(os.path.join(h.checkpoint_path, 'logs'))
 
     generator.train()
     discriminator.train()
 
-    async_pesq = AsyncPESQ(max_workers=4)
+    async_pesq = AsyncPESQ(max_workers=h.train_pesq_workers)
     best_pesq = 0
     one_labels = torch.ones(h.batch_size, device=device)
 
-    for epoch in range(max(0, last_epoch), a.training_epochs):
+    for epoch in range(max(0, last_epoch), h.epochs):
         if distributed:
             train_sampler.set_epoch(epoch)
 
@@ -145,7 +139,7 @@ def train(a, h):
             epoch_start = time.time()
             desc = ""
             progress = Progress(
-                TextColumn(f"[bold]Epoch {epoch + 1}/{a.training_epochs}"),
+                TextColumn(f"[bold]Epoch {epoch + 1}/{h.epochs}"),
                 BarColumn(bar_width=30),
                 MofNCompleteColumn(),
                 TimeRemainingColumn(compact=True),
@@ -161,7 +155,7 @@ def train(a, h):
             noisy_audio = noisy_audio.to(device, non_blocking=True)
 
             clean_mag, clean_pha, clean_com = mag_pha_stft(clean_audio, h.n_fft, h.hop_size, h.win_size, h.compress_factor)
-            noisy_mag, noisy_pha, noisy_com = mag_pha_stft(noisy_audio, h.n_fft, h.hop_size, h.win_size, h.compress_factor)
+            noisy_mag, noisy_pha, _ = mag_pha_stft(noisy_audio, h.n_fft, h.hop_size, h.win_size, h.compress_factor)
 
             with autocast('cuda', dtype=torch.bfloat16):
                 mag_g, pha_g, com_g = generator(noisy_mag, noisy_pha)
@@ -207,7 +201,9 @@ def train(a, h):
                 metric_g = discriminator(clean_mag, mag_g_hat)
                 loss_metric = F.mse_loss(metric_g.flatten(), one_labels)
 
-                loss_gen_all = loss_mag * 0.9 + loss_pha * 0.3 + loss_com * 0.1 + loss_stft * 0.1 + loss_metric * 0.05 + loss_time * 0.2
+                w = h.loss_weights
+                loss_gen_all = (loss_mag * w['mag'] + loss_pha * w['pha'] + loss_com * w['com']
+                                + loss_stft * w['stft'] + loss_metric * w['metric'] + loss_time * w['time'])
 
             loss_gen_all.backward()
             optim_g.step()
@@ -215,7 +211,7 @@ def train(a, h):
             if rank == 0:
                 progress.update(task_id, advance=1)
 
-                if steps % a.stdout_interval == 0:
+                if steps % h.stdout_interval == 0:
                     pesq_str = f"PESQ={batch_pesq_score.mean().item() * 3.5 + 1:.2f} " if batch_pesq_score is not None else ""
                     desc = (f"{pesq_str}Gen={loss_gen_all.item():.3f} Disc={loss_disc_all.item():.3f} "
                             f"Mag={loss_mag.item():.3f} Pha={loss_pha.item():.3f} "
@@ -228,11 +224,11 @@ def train(a, h):
                         loss_time.item(), loss_stft.item() / 2)
 
                 # Checkpointing
-                if steps % a.checkpoint_interval == 0 and steps != 0:
-                    checkpoint_path = "{}/g_{:08d}".format(a.checkpoint_path, steps)
+                if steps % h.checkpoint_interval == 0 and steps != 0:
+                    checkpoint_path = "{}/g_{:08d}".format(h.checkpoint_path, steps)
                     save_checkpoint(checkpoint_path,
                                     {'generator': (generator.module if distributed else generator).state_dict()})
-                    checkpoint_path = "{}/do_{:08d}".format(a.checkpoint_path, steps)
+                    checkpoint_path = "{}/do_{:08d}".format(h.checkpoint_path, steps)
                     save_checkpoint(checkpoint_path,
                                     {'discriminator': (discriminator.module if distributed else discriminator).state_dict(),
                                      'optim_g': optim_g.state_dict(), 'optim_d': optim_d.state_dict(),
@@ -240,7 +236,7 @@ def train(a, h):
                                      'steps': steps, 'epoch': epoch})
 
                 # Tensorboard summary logging
-                if steps % a.summary_interval == 0:
+                if steps % h.summary_interval == 0:
                     sw.add_scalar("Training/Generator Loss", loss_gen_all.item(), steps)
                     sw.add_scalar("Training/Discriminator Loss", loss_disc_all.item(), steps)
                     sw.add_scalar("Training/Metric Loss", loss_metric.item(), steps)
@@ -252,7 +248,7 @@ def train(a, h):
                     sw.add_scalar("Training/Learning Rate", scheduler_g.get_last_lr()[0], steps)
 
                 # Validation
-                if steps % a.validation_interval == 0 and steps != 0:
+                if steps % h.validation_interval == 0 and steps != 0:
                     progress.update(task_id, description="[yellow]Validating...[/yellow]")
                     generator.eval()
                     torch.cuda.empty_cache()
@@ -268,7 +264,7 @@ def train(a, h):
                             noisy_audio = noisy_audio.to(device, non_blocking=True)
 
                             clean_mag, clean_pha, clean_com = mag_pha_stft(clean_audio, h.n_fft, h.hop_size, h.win_size, h.compress_factor)
-                            noisy_mag, noisy_pha, noisy_com = mag_pha_stft(noisy_audio, h.n_fft, h.hop_size, h.win_size, h.compress_factor)
+                            noisy_mag, noisy_pha, _ = mag_pha_stft(noisy_audio, h.n_fft, h.hop_size, h.win_size, h.compress_factor)
 
                             with autocast('cuda', dtype=torch.bfloat16):
                                 mag_g, pha_g, com_g = generator(noisy_mag, noisy_pha)
@@ -304,10 +300,10 @@ def train(a, h):
                         sw.add_scalar("Validation/Complex Loss", val_com_err, steps)
                         sw.add_scalar("Validation/Consistency Loss", val_stft_err, steps)
 
-                    if epoch >= a.best_checkpoint_start_epoch:
+                    if epoch >= h.best_checkpoint_start_epoch:
                         if val_pesq_score > best_pesq:
                             best_pesq = val_pesq_score
-                            best_checkpoint_path = "{}/g_best".format(a.checkpoint_path)
+                            best_checkpoint_path = "{}/g_best".format(h.checkpoint_path)
                             save_checkpoint(best_checkpoint_path,
                                         {'generator': (generator.module if distributed else generator).state_dict()})
                             logger.info('New best PESQ: %.3f, saved g_best', best_pesq)
@@ -333,34 +329,17 @@ def main():
     print('Initializing Training Process..')
 
     parser = argparse.ArgumentParser()
-
-    parser.add_argument('--group_name', default=None)
-    parser.add_argument('--input_clean_wavs_dir', default='/work/VoiceBank+DEMAND/wav_clean')
-    parser.add_argument('--input_noisy_wavs_dir', default='/work/VoiceBank+DEMAND/wav_noisy')
-    parser.add_argument('--input_training_file', default='/work/VoiceBank+DEMAND/training.txt')
-    parser.add_argument('--input_validation_file', default='/work/VoiceBank+DEMAND/test.txt')
-    parser.add_argument('--checkpoint_path', default='cp_model')
     parser.add_argument('--config', default='config.yaml')
-    parser.add_argument('--training_epochs', default=400, type=int)
-    parser.add_argument('--stdout_interval', default=5, type=int)
-    parser.add_argument('--checkpoint_interval', default=5000, type=int)
-    parser.add_argument('--summary_interval', default=100, type=int)
-    parser.add_argument('--validation_interval', default=5000, type=int)
-    parser.add_argument('--best_checkpoint_start_epoch', default=40, type=int)
-
     a = parser.parse_args()
 
-    with open(a.config) as f:
-        h = SimpleNamespace(**yaml.safe_load(f))
+    h = load_config(a.config)
 
-    os.makedirs(a.checkpoint_path, exist_ok=True)
-    dest = os.path.join(a.checkpoint_path, 'config.yaml')
+    os.makedirs(h.checkpoint_path, exist_ok=True)
+    dest = os.path.join(h.checkpoint_path, 'config.yaml')
     if a.config != dest:
         shutil.copyfile(a.config, dest)
 
-    torch.manual_seed(h.seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed(h.seed)
+    set_seed(h.seed)
 
     train(a, h)
 

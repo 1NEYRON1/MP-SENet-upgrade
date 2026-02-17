@@ -49,9 +49,10 @@ def get_dataset_filelist(a):
 
 class Dataset(torch.utils.data.Dataset):
     def __init__(self, training_indexes, clean_wavs_dir, noisy_wavs_dir, segment_size,
-                sampling_rate, split=True, shuffle=True, n_cache_reuse=1, device=None):
+                sampling_rate, split=True, shuffle=True, n_cache_reuse=1, device=None, seed=None):
         self.audio_indexes = training_indexes
-        random.seed(1234)
+        if seed is not None:
+            random.seed(seed)
         if shuffle:
             random.shuffle(self.audio_indexes)
         self.clean_wavs_dir = clean_wavs_dir

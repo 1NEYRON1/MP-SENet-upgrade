@@ -1,14 +1,12 @@
-from __future__ import absolute_import, division, print_function, unicode_literals
 import os
 import argparse
-import yaml
 import torch
 from torch.amp import autocast
 from torchcodec.decoders import AudioDecoder
 from torchcodec.encoders import AudioEncoder
-from types import SimpleNamespace
 from dataset import mag_pha_stft, mag_pha_istft
 from models.model import MPNet
+from utils import load_config, set_seed
 from rich.progress import track
 
 torch.set_float32_matmul_precision('high')
@@ -44,9 +42,9 @@ def inference(a):
             noisy_wav = AudioDecoder(wav_path, sample_rate=h.sampling_rate, num_channels=1).get_all_samples().data.squeeze(0).to(device)
             norm_factor = torch.sqrt(len(noisy_wav) / (torch.sum(noisy_wav ** 2.0) + 1e-8)).to(device)
             noisy_wav = (noisy_wav * norm_factor).unsqueeze(0)
-            noisy_amp, noisy_pha, noisy_com = mag_pha_stft(noisy_wav, h.n_fft, h.hop_size, h.win_size, h.compress_factor)
+            noisy_amp, noisy_pha, _ = mag_pha_stft(noisy_wav, h.n_fft, h.hop_size, h.win_size, h.compress_factor)
             with autocast('cuda', dtype=torch.bfloat16):
-                amp_g, pha_g, com_g = model(noisy_amp, noisy_pha)
+                amp_g, pha_g, _ = model(noisy_amp, noisy_pha)
             audio_g = mag_pha_istft(amp_g.float(), pha_g.float(), h.n_fft, h.hop_size, h.win_size, h.compress_factor)
             audio_g = audio_g / norm_factor
 
@@ -65,17 +63,12 @@ def main():
     a = parser.parse_args()
 
     config_file = os.path.join(os.path.split(a.checkpoint_file)[0], 'config.yaml')
-    with open(config_file) as f:
-        global h
-        h = SimpleNamespace(**yaml.safe_load(f))
+    global h
+    h = load_config(config_file)
 
-    torch.manual_seed(h.seed)
+    set_seed(h.seed)
     global device
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed(h.seed)
-        device = torch.device('cuda')
-    else:
-        device = torch.device('cpu')
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     inference(a)
 

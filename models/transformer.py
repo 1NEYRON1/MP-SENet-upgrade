@@ -53,15 +53,3 @@ class TransformerBlock(nn.Module):
 
         return x
 
-def main():
-    x = torch.randn(4, 64, 401, 201)
-    b, c, t, f = x.size()
-    x = x.permute(0, 3, 2, 1).contiguous().view(b, f*t, c)
-    transformer = TransformerBlock(d_model=64, n_heads=4)
-    x = transformer(x)
-    x =  x.view(b, f, t, c).permute(0, 3, 2, 1)
-    print(x.size())
-
-
-if __name__ == '__main__':
-    main()

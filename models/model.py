@@ -58,7 +58,7 @@ class DenseEncoder(nn.Module):
             nn.InstanceNorm2d(h.dense_channel, affine=True),
             nn.PReLU(h.dense_channel))
 
-        self.dense_block = DenseBlock(h, depth=4)
+        self.dense_block = DenseBlock(h, depth=h.dense_depth)
 
         self.dense_conv_2 = nn.Sequential(
             nn.Conv2d(h.dense_channel, h.dense_channel, (1, 3), (1, 2), padding=(0, 1)),
@@ -75,7 +75,7 @@ class DenseEncoder(nn.Module):
 class MaskDecoder(nn.Module):
     def __init__(self, h, out_channel=1):
         super(MaskDecoder, self).__init__()
-        self.dense_block = DenseBlock(h, depth=4)
+        self.dense_block = DenseBlock(h, depth=h.dense_depth)
         self.mask_conv = nn.Sequential(
             SPConvTranspose2d(h.dense_channel, h.dense_channel, (1, 3), 2),
             nn.InstanceNorm2d(h.dense_channel, affine=True),
@@ -95,7 +95,7 @@ class MaskDecoder(nn.Module):
 class PhaseDecoder(nn.Module):
     def __init__(self, h, out_channel=1):
         super(PhaseDecoder, self).__init__()
-        self.dense_block = DenseBlock(h, depth=4)
+        self.dense_block = DenseBlock(h, depth=h.dense_depth)
         self.phase_conv = nn.Sequential(
             SPConvTranspose2d(h.dense_channel, h.dense_channel, (1, 3), 2),
             nn.InstanceNorm2d(h.dense_channel, affine=True),
@@ -118,8 +118,8 @@ class TSTransformerBlock(nn.Module):
     def __init__(self, h):
         super(TSTransformerBlock, self).__init__()
         self.h = h
-        self.time_transformer = TransformerBlock(d_model=h.dense_channel, n_heads=4)
-        self.freq_transformer = TransformerBlock(d_model=h.dense_channel, n_heads=4)
+        self.time_transformer = TransformerBlock(d_model=h.dense_channel, n_heads=h.n_heads)
+        self.freq_transformer = TransformerBlock(d_model=h.dense_channel, n_heads=h.n_heads)
 
     def forward(self, x):
         b, c, t, f = x.size()
@@ -146,7 +146,6 @@ class MPNet(nn.Module):
         self.phase_decoder = PhaseDecoder(h, out_channel=1)
 
     def forward(self, noisy_amp, noisy_pha): # [B, F, T]
-
         x = torch.stack((noisy_amp, noisy_pha), dim=-1).permute(0, 3, 2, 1) # [B, 2, T, F]
         x = self.dense_encoder(x)
 
@@ -176,7 +175,7 @@ def anti_wrapping_function(x):
 
 def pesq_score(utts_r, utts_g, h):
 
-    pesq_score = Parallel(n_jobs=30)(delayed(eval_pesq)(
+    pesq_score = Parallel(n_jobs=h.val_pesq_workers)(delayed(eval_pesq)(
                             utts_r[i].squeeze().cpu().numpy(),
                             utts_g[i].squeeze().cpu().numpy(), 
                             h.sampling_rate)

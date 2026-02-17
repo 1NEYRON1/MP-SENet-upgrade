@@ -1,11 +1,32 @@
 import logging
 import os
 import glob
+import random
+import yaml
+import numpy as np
 import torch
 import torch.nn as nn
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pylab as plt
+from types import SimpleNamespace
+
+def set_seed(seed):
+    os.environ['PYTHONHASHSEED'] = str(seed)
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+
+
+def load_config(path):
+    with open(path) as f:
+        raw = yaml.safe_load(f)
+    flat = {}
+    for section_val in raw.values():
+        flat.update(section_val)
+    return SimpleNamespace(**flat)
+
 
 def plot_spectrogram(spectrogram):
     fig, ax = plt.subplots(figsize=(4, 3))
@@ -88,10 +109,3 @@ def scan_checkpoint(cp_dir, prefix):
         return None
     return sorted(cp_list)[-1]
 
-def main():
-    plsigmoid = PLSigmoid(201)
-    a = torch.randn(4, 201, 100)
-    print(plsigmoid(a))
-
-if __name__ == '__main__':
-    main()

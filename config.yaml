@@ -1,16 +1,51 @@
-batch_size: 2
-learning_rate: 0.0005
-adam_b1: 0.8
-adam_b2: 0.99
-warmup_epochs: 10
-seed: 1234
-dense_channel: 64
-compress_factor: 0.3
-num_tsblocks: 4
-beta: 2.0
-sampling_rate: 16000
-segment_size: 32000
-n_fft: 400
-hop_size: 100
-win_size: 400
-num_workers: 4
+model:
+  dense_channel: 64
+  num_tsblocks: 4
+  n_heads: 4
+  dense_depth: 4
+  beta: 2.0
+  compress_factor: 0.3
+  disc_dim: 16
+  disc_dropout: 0.3
+
+training:
+  learning_rate: 0.0005
+  adam_b1: 0.8
+  adam_b2: 0.99
+  batch_size: 12
+  epochs: 400
+  warmup_epochs: 10
+  loss_weights:
+    mag: 0.9
+    pha: 0.3
+    com: 0.1
+    stft: 0.1
+    metric: 0.05
+    time: 0.2
+  train_pesq_workers: 16
+
+intervals:
+  stdout_interval: 5
+  summary_interval: 100
+  checkpoint_interval: 5000
+  validation_interval: 5000
+  val_pesq_workers: 30
+  best_checkpoint_start_epoch: 40
+
+data:
+  sampling_rate: 16000
+  segment_size: 32000
+  n_fft: 400
+  hop_size: 100
+  win_size: 400
+  num_workers: 4
+
+paths:
+  checkpoint_path: cp_model
+  input_clean_wavs_dir: VoiceBank+DEMAND/wavs_clean
+  input_noisy_wavs_dir: VoiceBank+DEMAND/wavs_noisy
+  input_training_file: VoiceBank+DEMAND/training.txt
+  input_validation_file: VoiceBank+DEMAND/test.txt
+
+reproducibility:
+  seed: 1234
