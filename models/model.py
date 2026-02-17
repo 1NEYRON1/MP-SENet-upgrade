@@ -122,8 +122,9 @@ class TSTransformerBlock(nn.Module):
         self.h = h
 
         if hasattr(h, 'use_rope') and h.use_rope:
-            self.time_transformer = RopeTransformerBlock(d_model=h.dense_channel, n_heads=4)
-            self.freq_transformer = RopeTransformerBlock(d_model=h.dense_channel, n_heads=4)
+            remove_gru = hasattr(h, 'remove_gru') and h.remove_gru
+            self.time_transformer = RopeTransformerBlock(d_model=h.dense_channel, n_heads=4, remove_gru=remove_gru)
+            self.freq_transformer = RopeTransformerBlock(d_model=h.dense_channel, n_heads=4, remove_gru=remove_gru)
         else:
             self.time_transformer = TransformerBlock(d_model=h.dense_channel, n_heads=4)
             self.freq_transformer = TransformerBlock(d_model=h.dense_channel, n_heads=4)
@@ -142,11 +143,12 @@ class MPNet(nn.Module):
     def __init__(self, h, num_tsblocks=4):
         super(MPNet, self).__init__()
         self.h = h
-        self.num_tscblocks = num_tsblocks
+        remove_gru = hasattr(h, 'remove_gru') and h.remove_gru
+        self.num_tscblocks = num_tsblocks if not remove_gru else 12
         self.dense_encoder = DenseEncoder(h, in_channel=2)
 
         self.TSTransformer = nn.ModuleList([])
-        for i in range(num_tsblocks):
+        for i in range(self.num_tscblocks):
             self.TSTransformer.append(TSTransformerBlock(h))
         
         self.mask_decoder = MaskDecoder(h, out_channel=1)
@@ -155,6 +157,7 @@ class MPNet(nn.Module):
     def forward(self, noisy_amp, noisy_pha): # [B, F, T]
 
         x = torch.stack((noisy_amp, noisy_pha), dim=-1).permute(0, 3, 2, 1) # [B, 2, T, F]
+
         x = self.dense_encoder(x)
 
         for i in range(self.num_tscblocks):
