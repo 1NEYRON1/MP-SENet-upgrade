@@ -26,11 +26,11 @@ training:
 
 intervals:
   stdout_interval: 5
-  summary_interval: 100
-  checkpoint_interval: 5000
-  validation_interval: 5000
+  summary_interval: 50
+  checkpoint_interval: 1000
+  validation_interval: 1000
   val_pesq_workers: 30
-  best_checkpoint_start_epoch: 40
+  best_checkpoint_start_epoch: 16
 
 data:
   sampling_rate: 16000
@@ -42,10 +42,10 @@ data:
 
 paths:
   checkpoint_path: cp_model
-  input_clean_wavs_dir: VoiceBank+DEMAND/wavs_clean
-  input_noisy_wavs_dir: VoiceBank+DEMAND/wavs_noisy
-  input_training_file: VoiceBank+DEMAND/training.txt
-  input_validation_file: VoiceBank+DEMAND/test.txt
+  input_clean_wavs_dir: /work/VoiceBank+DEMAND/wav_clean
+  input_noisy_wavs_dir: /work/VoiceBank+DEMAND/wav_noisy
+  input_training_file: /work/VoiceBank+DEMAND/training.txt
+  input_validation_file: /work/VoiceBank+DEMAND/test.txt
 
 reproducibility:
   seed: 1234
