@@ -1,18 +1,22 @@
+import glob
 import logging
 import os
-import glob
 import random
-import yaml
+
+import matplotlib
 import numpy as np
 import torch
 import torch.nn as nn
-import matplotlib
+import yaml
+
 matplotlib.use("Agg")
-import matplotlib.pylab as plt
 from types import SimpleNamespace
 
+import matplotlib.pylab as plt
+
+
 def set_seed(seed):
-    os.environ['PYTHONHASHSEED'] = str(seed)
+    os.environ["PYTHONHASHSEED"] = str(seed)
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -30,8 +34,7 @@ def load_config(path):
 
 def plot_spectrogram(spectrogram):
     fig, ax = plt.subplots(figsize=(4, 3))
-    im = ax.imshow(spectrogram, aspect="auto", origin="lower",
-                   interpolation='none')
+    im = ax.imshow(spectrogram, aspect="auto", origin="lower", interpolation="none")
     plt.colorbar(im, ax=ax)
     fig.canvas.draw()
     plt.close()
@@ -40,11 +43,14 @@ def plot_spectrogram(spectrogram):
 
 
 def get_padding(kernel_size, dilation=1):
-    return int((kernel_size*dilation - dilation)/2)
+    return int((kernel_size * dilation - dilation) / 2)
 
 
 def get_padding_2d(kernel_size, dilation=(1, 1)):
-    return (int((kernel_size[0]*dilation[0] - dilation[0])/2), int((kernel_size[1]*dilation[1] - dilation[1])/2))
+    return (
+        int((kernel_size[0] * dilation[0] - dilation[0]) / 2),
+        int((kernel_size[1] * dilation[1] - dilation[1]) / 2),
+    )
 
 
 class LearnableSigmoid1d(nn.Module):
@@ -71,11 +77,11 @@ class Sigmoid2d(nn.Module):
     def __init__(self, in_features, beta=1):
         super().__init__()
         self.beta = beta
-        self.register_buffer('slope', torch.ones(in_features, 1))
+        self.register_buffer("slope", torch.ones(in_features, 1))
 
     def forward(self, x):
         return self.beta * torch.sigmoid(self.slope * x)
-    
+
 
 class PLSigmoid(nn.Module):
     def __init__(self, in_features):
@@ -85,9 +91,9 @@ class PLSigmoid(nn.Module):
 
     def forward(self, x):
         return self.beta * torch.sigmoid(self.slope * x)
-    
 
-logger = logging.getLogger('train')
+
+logger = logging.getLogger("train")
 
 
 def load_checkpoint(filepath, device):
@@ -103,9 +109,8 @@ def save_checkpoint(filepath, obj):
 
 
 def scan_checkpoint(cp_dir, prefix):
-    pattern = os.path.join(cp_dir, prefix + '????????')
+    pattern = os.path.join(cp_dir, prefix + "????????")
     cp_list = glob.glob(pattern)
     if len(cp_list) == 0:
         return None
     return sorted(cp_list)[-1]
-
