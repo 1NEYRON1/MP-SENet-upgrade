@@ -338,6 +338,7 @@ def train(a, h):
                 # Validation
                 if steps % h.validation_interval == 0 and steps != 0:
                     progress.update(task_id, description="[yellow]Validating...[/yellow]")
+                    val_task_id = progress.add_task("[yellow]Validation", total=len(validation_loader))
                     generator.eval()
                     torch.cuda.empty_cache()
                     audios_r, audios_g = [], []
@@ -382,6 +383,7 @@ def train(a, h):
                             val_pha_err_tot += (val_ip_err + val_gd_err + val_iaf_err).item()
                             val_com_err_tot += F.mse_loss(clean_com, com_g.float()).item()
                             val_stft_err_tot += F.mse_loss(com_g.float(), com_g_hat).item()
+                            progress.update(val_task_id, advance=1)
 
                         val_mag_err = val_mag_err_tot / (j + 1)
                         val_pha_err = val_pha_err_tot / (j + 1)
@@ -389,6 +391,8 @@ def train(a, h):
                         val_stft_err = val_stft_err_tot / (j + 1)
                         val_pesq_score = pesq_score(audios_r, audios_g, h).item()
 
+                        progress.remove_task(val_task_id)
+                        progress.update(task_id, description=desc)
                         console.print(
                             f"  [green]Val[/green] step {steps} | "
                             f"PESQ: [bold]{val_pesq_score:.3f}[/bold] "
