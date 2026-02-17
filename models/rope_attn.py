@@ -94,9 +94,27 @@ class FFN(nn.Module):
 
         return x
 
+# FFN без GRU
+class MLPFFN(nn.Module):
+    def __init__(self, d_model: int, dropout: float = 0.0):
+        super().__init__()
+        inner = d_model * 3  # Взято от балды
+        self.fc1 = nn.Linear(d_model, inner)
+        self.fc2 = nn.Linear(inner, d_model)
+        self.drop = nn.Dropout(dropout)
+        self.act = nn.GELU()
+
+    def forward(self, x):
+        x = self.fc1(x)
+        x = self.act(x)
+        x = self.drop(x)
+        x = self.fc2(x)
+        x = self.drop(x)
+        return x
+
 
 class RopeTransformerBlock(nn.Module):
-    def __init__(self, d_model, n_heads=4, bidirectional=True, dropout=0):
+    def __init__(self, d_model, n_heads=4, bidirectional=True, dropout=0, remove_gru=False):
         super(RopeTransformerBlock, self).__init__()
 
         self.norm1 = LayerNorm(d_model)
@@ -104,7 +122,10 @@ class RopeTransformerBlock(nn.Module):
         self.dropout1 = Dropout(dropout)
         
         self.norm2 = LayerNorm(d_model)
-        self.ffn = FFN(d_model, bidirectional=bidirectional)
+        if remove_gru:
+            self.ffn = MLPFFN(d_model, dropout=dropout)
+        else:
+            self.ffn = FFN(d_model, bidirectional=bidirectional)
         self.dropout2 = Dropout(dropout)
 
         self.norm3 = LayerNorm(d_model)
