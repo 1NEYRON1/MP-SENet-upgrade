@@ -12,6 +12,8 @@
     "num_tsblocks": 4,
     "block_type": "",
     "beta": 2.0,
+    
+    "use_waveform": true,
 
     "sampling_rate": 16000,
     "segment_size": 32000,

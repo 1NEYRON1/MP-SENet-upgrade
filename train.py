@@ -320,17 +320,7 @@ def main():
     if h.num_gpus > 1:
         mp.spawn(train, nprocs=h.num_gpus, args=(a, h,))
     else:
-        while True:
-            try:
-                train(0, a, h)
-                break
-            except torch.cuda.OutOfMemoryError:
-                torch.cuda.empty_cache()
-                h.batch_size -= 1
-                print(f"CUDA OOM detected. Reducing batch size to {h.batch_size} and retrying...")
-                if h.batch_size == 0:
-                    print("Not even a single batch fits in memory. Get a better GPU, mate. Terminating early...")
-                    break
+        train(0, a, h)
 
 if __name__ == '__main__':
     main()

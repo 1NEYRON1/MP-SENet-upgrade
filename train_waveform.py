@@ -7,23 +7,19 @@ import time
 import argparse
 import json
 import torch
-import gc
 import torch.nn.functional as F
 from torch.utils.tensorboard import SummaryWriter
 from torch.utils.data import DistributedSampler, DataLoader
 import torch.multiprocessing as mp
 from torch.distributed import init_process_group
 from torch.nn.parallel import DistributedDataParallel
-# from torch.cuda.amp import autocast, GradScaler  # Import AMP components
 from env import AttrDict, build_env
 from dataset import Dataset, mag_pha_stft, mag_pha_istft, get_dataset_filelist
-from models.model import MPNet_waveform, MPNet, MPNet_waveform_encoder, pesq_score, phase_losses
+from models.model import MPNet, pesq_score, phase_losses
 from models.discriminator import MetricDiscriminator, batch_pesq
 from utils import scan_checkpoint, load_checkpoint, save_checkpoint
 
 torch.backends.cudnn.benchmark = True
-torch.backends.cuda.matmul.allow_tf32 = True  # Enable TF32
-torch.backends.cudnn.allow_tf32 = True
 
 def train(rank, a, h):
     if h.num_gpus > 1:
@@ -33,16 +29,8 @@ def train(rank, a, h):
     torch.cuda.manual_seed(h.seed)
     device = torch.device('cuda:{:d}'.format(rank))
     
-    if h.waveform == "stack":
-        generator = MPNet_waveform(h).to(device)
-    elif h.waveform == "encoder":
-        generator = MPNet_waveform_encoder(h).to(device)
-    else:
-        generator = MPNet(h).to(device)
+    generator = MPNet(h).to(device)
     discriminator = MetricDiscriminator().to(device)
-
-    # Initialize GradScaler for AMP (optional for bf16, but included for robustness)
-    # scaler = GradScaler(enabled=torch.cuda.is_bf16_supported())  # Enable scaler only if bf16 is supported
 
     if rank == 0:
         print(generator)
@@ -122,6 +110,7 @@ def train(rank, a, h):
             train_sampler.set_epoch(epoch)
 
         for i, batch in enumerate(train_loader):
+            
             if rank == 0:
                 start_b = time.time()
             clean_audio, noisy_audio = batch
@@ -129,19 +118,21 @@ def train(rank, a, h):
             noisy_audio = torch.autograd.Variable(noisy_audio.to(device, non_blocking=True))
             one_labels = torch.ones(h.batch_size).to(device, non_blocking=True)
 
-            
             clean_mag, clean_pha, clean_com = mag_pha_stft(clean_audio, h.n_fft, h.hop_size, h.win_size, h.compress_factor)
             noisy_mag, noisy_pha, noisy_com = mag_pha_stft(noisy_audio, h.n_fft, h.hop_size, h.win_size, h.compress_factor)
 
             # mag_g, pha_g, com_g = generator(noisy_mag, noisy_pha, noisy_com)
-            if h.waveform == "encoder":
-                mag_g, pha_g, com_g = generator(noisy_mag, noisy_pha, noisy_audio)
+            if hasattr(h, 'use_waveform') and h.use_waveform:
+                mag_g, pha_g, com_g = generator(noisy_mag, noisy_pha, noisy_com)
             else:
                 mag_g, pha_g, com_g = generator(noisy_mag, noisy_pha)
 
 
             audio_g = mag_pha_istft(mag_g, pha_g, h.n_fft, h.hop_size, h.win_size, h.compress_factor)
             mag_g_hat, pha_g_hat, com_g_hat = mag_pha_stft(audio_g, h.n_fft, h.hop_size, h.win_size, h.compress_factor)
+            
+            audio_list_r, audio_list_g = list(clean_audio.cpu().numpy()), list(audio_g.detach().cpu().numpy())
+            batch_pesq_score = batch_pesq(audio_list_r, audio_list_g)
 
             # Discriminator
             optim_d.zero_grad()
@@ -149,22 +140,34 @@ def train(rank, a, h):
             metric_g = discriminator(clean_mag, mag_g_hat.detach())
             loss_disc_r = F.mse_loss(one_labels, metric_r.flatten())
 
-            batch_pesq_score = batch_pesq(clean_audio.cpu().numpy(), audio_g.detach().cpu().numpy())
             if batch_pesq_score is not None:
-                # loss_disc_g = F.mse_loss(torch.tensor(batch_pesq_score, device=device, dtype=torch.bfloat16), metric_g.flatten())
-                loss_disc_g = F.mse_loss(torch.tensor(batch_pesq_score, device=device), metric_g.flatten())
+                loss_disc_g = F.mse_loss(batch_pesq_score.to(device), metric_g.flatten())
             else:
                 print('pesq is None!')
                 loss_disc_g = 0
-
+            
             loss_disc_all = loss_disc_r + loss_disc_g
-            # Backward pass with scaler
-            # scaler.scale(loss_disc_all).backward()
-            # scaler.step(optim_d)
-            # scaler.update()
+            loss_disc_all.backward()
+            optim_d.step()
+            
+            # if batch_pesq_score is not None:
+            #     # Discriminator
+            #     optim_d.zero_grad()
+            #     metric_r = discriminator(clean_mag, clean_mag)
+            #     metric_g = discriminator(clean_mag, mag_g_hat.detach())
+            #     loss_disc_r = F.mse_loss(one_labels, metric_r.flatten())
+            #     loss_disc_g = F.mse_loss(batch_pesq_score.to(device), metric_g.flatten())
+            #     loss_disc_all = loss_disc_r + loss_disc_g
+            
+            #     loss_disc_all.backward()
+            #     optim_d.step()
+            # else:
+            #     print('PESQ is None!')
+            #     loss_disc_all = 0
 
             # Generator
             optim_g.zero_grad()
+
             # L2 Magnitude Loss
             loss_mag = F.mse_loss(clean_mag, mag_g)
             # Anti-wrapping Phase Loss
@@ -182,10 +185,8 @@ def train(rank, a, h):
 
             loss_gen_all = loss_mag * 0.9 + loss_pha * 0.3 + loss_com * 0.1 + loss_stft * 0.1 + loss_metric * 0.05 + loss_time * 0.2
 
-                # Backward pass with scaler
-                # scaler.scale(loss_gen_all).backward()
-                # scaler.step(optim_g)
-                # scaler.update()
+            loss_gen_all.backward()
+            optim_g.step()
 
             if rank == 0:
                 # STDOUT logging
@@ -227,14 +228,12 @@ def train(rank, a, h):
                 if steps % a.validation_interval == 0 and steps != 0:
                     generator.eval()
                     torch.cuda.empty_cache()
-                    gc.collect()
                     audios_r, audios_g = [], []
                     val_mag_err_tot = 0
                     val_pha_err_tot = 0
                     val_com_err_tot = 0
                     val_stft_err_tot = 0
                     with torch.no_grad():
-                        # with autocast(dtype=torch.bfloat16, enabled=torch.cuda.is_bf16_supported()):
                         for j, batch in enumerate(validation_loader):
                             clean_audio, noisy_audio = batch
                             clean_audio = torch.autograd.Variable(clean_audio.to(device, non_blocking=True))
@@ -244,15 +243,15 @@ def train(rank, a, h):
                             noisy_mag, noisy_pha, noisy_com = mag_pha_stft(noisy_audio, h.n_fft, h.hop_size, h.win_size, h.compress_factor)
 
                             # mag_g, pha_g, com_g = generator(noisy_mag, noisy_pha)
-                            if h.waveform == "encoder":
-                                mag_g, pha_g, com_g = generator(noisy_mag, noisy_pha, noisy_audio)
+                            if hasattr(h, 'use_waveform') and h.use_waveform:
+                                mag_g, pha_g, com_g = generator(noisy_mag, noisy_pha, noisy_com)
                             else:
                                 mag_g, pha_g, com_g = generator(noisy_mag, noisy_pha)
 
 
                             audio_g = mag_pha_istft(mag_g, pha_g, h.n_fft, h.hop_size, h.win_size, h.compress_factor)
                             mag_g_hat, pha_g_hat, com_g_hat = mag_pha_stft(audio_g, h.n_fft, h.hop_size, h.win_size, h.compress_factor)
-                            audios_r += torch.split(clean_audio, 1, dim=0)
+                            audios_r += torch.split(clean_audio, 1, dim=0) # [1, T] * B
                             audios_g += torch.split(audio_g, 1, dim=0)
 
                             val_mag_err_tot += F.mse_loss(clean_mag, mag_g).item()
@@ -260,9 +259,6 @@ def train(rank, a, h):
                             val_pha_err_tot += (val_ip_err + val_gd_err + val_iaf_err).item()
                             val_com_err_tot += F.mse_loss(clean_com, com_g).item()
                             val_stft_err_tot += F.mse_loss(com_g, com_g_hat).item()
-
-                            del clean_audio, noisy_audio, mag_g, pha_g, com_g, audio_g, mag_g_hat, pha_g_hat, com_g_hat
-                            torch.cuda.empty_cache()
 
                         val_mag_err = val_mag_err_tot / (j+1)
                         val_pha_err = val_pha_err_tot / (j+1)
@@ -288,14 +284,13 @@ def train(rank, a, h):
 
             steps += 1
 
-            torch.cuda.empty_cache()
-
         scheduler_g.step()
         scheduler_d.step()
         
         if rank == 0:
             print('Time taken for epoch {} is {} sec\n'.format(epoch + 1, int(time.time() - start)))
 
+            
 def main():
     print('Initializing Training Process..')
 
@@ -330,27 +325,14 @@ def main():
         h.num_gpus = torch.cuda.device_count()
         h.batch_size = int(h.batch_size / h.num_gpus)
         print('Batch size per GPU :', h.batch_size)
-        # Check for bf16 support
-        if not torch.cuda.is_bf16_supported():
-            print("Warning: bfloat16 is not supported on this GPU. Falling back to float32.")
     else:
-        print("CUDA not available. bfloat16 requires CUDA support.")
-        return
+        pass
 
     if h.num_gpus > 1:
         mp.spawn(train, nprocs=h.num_gpus, args=(a, h,))
     else:
-        while True:
-            try:
-                train(0, a, h)
-                break
-            except torch.cuda.OutOfMemoryError:
-                torch.cuda.empty_cache()
-                h.batch_size -= 1
-                print(f"CUDA OOM detected. Reducing batch size to {h.batch_size} and retrying...")
-                if h.batch_size == 0:
-                    print("Not even a single batch fits in memory. Get a better GPU, mate. Terminating early...")
-                    break
+        train(0, a, h)
 
+        
 if __name__ == '__main__':
     main()
