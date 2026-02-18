@@ -154,7 +154,7 @@ class MPNet(nn.Module):
 
     def forward(self, noisy_amp, noisy_pha, noisy_com=None): # [B, F, T]
         
-        if hasattr(h, 'use_waveform') and h.use_waveform:
+        if hasattr(self.h, 'use_waveform') and self.h.use_waveform:
             if noisy_com is None:
                 raise ValueError("noisy_com required in waveform mode")
             noisy_real = noisy_com[..., 0]
