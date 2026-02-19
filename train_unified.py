@@ -25,11 +25,12 @@ torch.backends.cudnn.benchmark = True
 def build_generator(h):
     """Return (generator_instance, pesq_score_fn, phase_losses_fn)."""
     gen_type = getattr(h, 'generator_type', 'baseline')
+    num_tsblocks = getattr(h, 'num_tsconformers', 4)
     if gen_type == 'mingru':
         from models.model_mingru import MPNet, pesq_score, phase_losses
     else:  # 'baseline'
         from models.model import MPNet, pesq_score, phase_losses
-    return MPNet(h), pesq_score, phase_losses
+    return MPNet(h, num_tsblocks=num_tsblocks), pesq_score, phase_losses
 
 
 class MultiScaleDiscriminator(nn.Module):
@@ -438,6 +439,8 @@ def main():
     parser.add_argument('--discriminator_type', default=None, choices=['single', 'multi_scale'],
                         help='Discriminator architecture (overrides config)')
 
+    parser.add_argument('--use_rope', action='store_true',
+                        help='Use RoPE in transformer attention (overrides config)')
     parser.add_argument('--use_ssl_loss', action='store_true',
                         help='Enable SSL loss (overrides config)')
     parser.add_argument('--ssl_model_name', default=None,
@@ -456,6 +459,8 @@ def main():
         h.generator_type = a.generator_type
     if a.discriminator_type is not None:
         h.discriminator_type = a.discriminator_type
+    if a.use_rope:
+        h.use_rope = True
     if a.use_ssl_loss:
         h.use_ssl_loss = True
     if a.ssl_model_name is not None:
@@ -466,9 +471,10 @@ def main():
     gen_type  = getattr(h, 'generator_type', 'baseline')
     disc_type = getattr(h, 'discriminator_type', 'single')
     ssl_flag  = getattr(h, 'use_ssl_loss', False)
+    use_rope  = getattr(h, 'use_rope', False)
 
     print(f'Initializing Unified Training — generator={gen_type}, '
-          f'discriminator={disc_type}, ssl={ssl_flag}')
+          f'discriminator={disc_type}, ssl={ssl_flag}, use_rope={use_rope}')
 
     build_env(a.config, 'config.json', a.checkpoint_path)
 

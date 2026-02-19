@@ -30,6 +30,7 @@
 
     "generator_type": "baseline",
     "discriminator_type": "single",
+    "use_rope": false,
 
     "use_ssl_loss": false,
     "ssl_model_name": "nvidia/ssl_en_nest_xlarge_v1.0",
