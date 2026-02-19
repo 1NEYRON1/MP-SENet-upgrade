@@ -12,9 +12,10 @@ pip install torch torchvision torchaudio --index-url https://download.pytorch.or
 CFLAGS="-std=c99" pip install soundfile pesq tqdm numpy einops librosa scipy joblib
 pip install tensorboard natsort matplotlib
 
-# NeMo for SSL loss (nvidia/ssl_en_nest_*). Install after torch.
+# NeMo for SSL loss (nvidia/ssl_en_nest_*). Install after torch. NeMo needs hydra.
+pip install hydra-core
 pip install nemo-toolkit-asr
 
 python -c "import torch; print(f'PyTorch {torch.__version__}, CUDA: {torch.cuda.is_available()}')"
-python -c "import nemo.collections.asr as nemo_asr; print('NeMo ASR: OK')"
+python -c "import nemo.collections.asr as nemo_asr; print('NeMo ASR: OK')" || echo "NeMo import failed — SSL loss may not work"
 echo "=== Done ==="
