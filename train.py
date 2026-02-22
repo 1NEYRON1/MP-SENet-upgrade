@@ -111,7 +111,7 @@ def train(rank, a, h):
             train_sampler.set_epoch(epoch)
 
         for i, batch in enumerate(train_loader):
-
+            
             if rank == 0:
                 start_b = time.time()
             clean_audio, noisy_audio = batch
@@ -122,11 +122,16 @@ def train(rank, a, h):
             clean_mag, clean_pha, clean_com = mag_pha_stft(clean_audio, h.n_fft, h.hop_size, h.win_size, h.compress_factor)
             noisy_mag, noisy_pha, noisy_com = mag_pha_stft(noisy_audio, h.n_fft, h.hop_size, h.win_size, h.compress_factor)
 
-            mag_g, pha_g, com_g = generator(noisy_mag, noisy_pha)
+            # mag_g, pha_g, com_g = generator(noisy_mag, noisy_pha, noisy_com)
+            if hasattr(h, 'use_waveform') and h.use_waveform:
+                mag_g, pha_g, com_g = generator(noisy_mag, noisy_pha, noisy_com)
+            else:
+                mag_g, pha_g, com_g = generator(noisy_mag, noisy_pha)
+
 
             audio_g = mag_pha_istft(mag_g, pha_g, h.n_fft, h.hop_size, h.win_size, h.compress_factor)
             mag_g_hat, pha_g_hat, com_g_hat = mag_pha_stft(audio_g, h.n_fft, h.hop_size, h.win_size, h.compress_factor)
-
+            
             audio_list_r, audio_list_g = list(clean_audio.cpu().numpy()), list(audio_g.detach().cpu().numpy())
             batch_pesq_score = batch_pesq(audio_list_r, audio_list_g)
 
@@ -135,7 +140,7 @@ def train(rank, a, h):
             metric_r = discriminator(clean_mag, clean_mag)
             metric_g = discriminator(clean_mag, mag_g_hat.detach())
             loss_disc_r = F.mse_loss(one_labels, metric_r.flatten())
-            
+
             if batch_pesq_score is not None:
                 loss_disc_g = F.mse_loss(batch_pesq_score.to(device), metric_g.flatten())
             else:
@@ -179,7 +184,7 @@ def train(rank, a, h):
             metric_g = discriminator(clean_mag, mag_g_hat)
             loss_metric = F.mse_loss(metric_g.flatten(), one_labels)
 
-            loss_gen_all = loss_mag * 0.9 + loss_pha * 0.3  + loss_com * 0.1 + loss_stft * 0.1 + loss_metric * 0.05 + loss_time * 0.2
+            loss_gen_all = loss_mag * 0.9 + loss_pha * 0.3 + loss_com * 0.1 + loss_stft * 0.1 + loss_metric * 0.05 + loss_time * 0.2
 
             loss_gen_all.backward()
             optim_g.step()
@@ -238,7 +243,12 @@ def train(rank, a, h):
                             clean_mag, clean_pha, clean_com = mag_pha_stft(clean_audio, h.n_fft, h.hop_size, h.win_size, h.compress_factor)
                             noisy_mag, noisy_pha, noisy_com = mag_pha_stft(noisy_audio, h.n_fft, h.hop_size, h.win_size, h.compress_factor)
 
-                            mag_g, pha_g, com_g = generator(noisy_mag, noisy_pha)
+                            # mag_g, pha_g, com_g = generator(noisy_mag, noisy_pha)
+                            if hasattr(h, 'use_waveform') and h.use_waveform:
+                                mag_g, pha_g, com_g = generator(noisy_mag, noisy_pha, noisy_com)
+                            else:
+                                mag_g, pha_g, com_g = generator(noisy_mag, noisy_pha)
+
 
                             audio_g = mag_pha_istft(mag_g, pha_g, h.n_fft, h.hop_size, h.win_size, h.compress_factor)
                             mag_g_hat, pha_g_hat, com_g_hat = mag_pha_stft(audio_g, h.n_fft, h.hop_size, h.win_size, h.compress_factor)
@@ -281,7 +291,7 @@ def train(rank, a, h):
         if rank == 0:
             print('Time taken for epoch {} is {} sec\n'.format(epoch + 1, int(time.time() - start)))
 
-
+            
 def main():
     print('Initializing Training Process..')
 
@@ -324,6 +334,6 @@ def main():
     else:
         train(0, a, h)
 
-
+        
 if __name__ == '__main__':
     main()

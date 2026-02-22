@@ -19,6 +19,8 @@
     "win_size": 400,
 
     "num_workers": 4,
+    
+    "use_waveform": true,
 
 
     // --generator_type     : "baseline" | "mingru"

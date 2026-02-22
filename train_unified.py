@@ -208,7 +208,10 @@ def train(rank, a, h):
             clean_mag, clean_pha, clean_com = mag_pha_stft(clean_audio, h.n_fft, h.hop_size, h.win_size, h.compress_factor)
             noisy_mag, noisy_pha, noisy_com = mag_pha_stft(noisy_audio, h.n_fft, h.hop_size, h.win_size, h.compress_factor)
 
-            mag_g, pha_g, com_g = generator(noisy_mag, noisy_pha)
+            if hasattr(h, 'use_waveform') and h.use_waveform:
+                mag_g, pha_g, com_g = generator(noisy_mag, noisy_pha, noisy_com)
+            else:
+                mag_g, pha_g, com_g = generator(noisy_mag, noisy_pha)
             audio_g = mag_pha_istft(mag_g, pha_g, h.n_fft, h.hop_size, h.win_size, h.compress_factor)
             mag_g_hat, pha_g_hat, com_g_hat = mag_pha_stft(audio_g, h.n_fft, h.hop_size, h.win_size, h.compress_factor)
 
@@ -358,6 +361,10 @@ def train(rank, a, h):
                                 noisy_audio_v, h.n_fft, h.hop_size, h.win_size, h.compress_factor)
 
                             mag_g_v, pha_g_v, com_g_v = generator(noisy_mag_v, noisy_pha_v)
+                            if hasattr(h, 'use_waveform') and h.use_waveform:
+                                mag_g, pha_g, com_g = generator(noisy_mag_v, noisy_pha_v, noisy_com_v)
+                            else:
+                                mag_g, pha_g, com_g = generator(noisy_mag_v, noisy_pha_v)
                             audio_g_v = mag_pha_istft(
                                 mag_g_v, pha_g_v, h.n_fft, h.hop_size, h.win_size, h.compress_factor)
                             mag_g_hat_v, _, com_g_hat_v = mag_pha_stft(

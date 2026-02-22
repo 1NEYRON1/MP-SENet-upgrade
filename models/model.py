@@ -142,7 +142,7 @@ class MPNet(nn.Module):
         super(MPNet, self).__init__()
         self.h = h
         self.num_tscblocks = num_tsblocks
-        self.dense_encoder = DenseEncoder(h, in_channel=2)
+        self.dense_encoder = DenseEncoder(h, in_channel=4 if hasattr(h, 'use_waveform') and h.use_waveform else 2)
 
         self.TSTransformer = nn.ModuleList([])
         for i in range(num_tsblocks):
@@ -151,9 +151,17 @@ class MPNet(nn.Module):
         self.mask_decoder = MaskDecoder(h, out_channel=1)
         self.phase_decoder = PhaseDecoder(h, out_channel=1)
 
-    def forward(self, noisy_amp, noisy_pha): # [B, F, T]
-
-        x = torch.stack((noisy_amp, noisy_pha), dim=-1).permute(0, 3, 2, 1) # [B, 2, T, F]
+    def forward(self, noisy_amp, noisy_pha, noisy_com=None): # [B, F, T]
+        
+        if hasattr(self.h, 'use_waveform') and self.h.use_waveform:
+            if noisy_com is None:
+                raise ValueError("noisy_com required in waveform mode")
+            noisy_real = noisy_com[..., 0]
+            noisy_imag = noisy_com[..., 1]
+            x = torch.stack((noisy_amp, noisy_pha, noisy_real, noisy_imag), dim=-1).permute(0, 3, 2, 1) # [B, 4, T, F]
+        else:
+            x = torch.stack((noisy_amp, noisy_pha), dim=-1).permute(0, 3, 2, 1) # [B, 2, T, F]
+            
         x = self.dense_encoder(x)
 
         for i in range(self.num_tscblocks):

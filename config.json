@@ -11,6 +11,8 @@
     "compress_factor": 0.3, 
     "num_tsconformers": 4,
     "beta": 2.0,
+    
+    "use_waveform": true,
 
     "use_rope": false,
 
