@@ -18,17 +18,10 @@
     "hop_size": 100,
     "win_size": 400,
 
-    "num_workers": 4,
+    "num_workers": 30,
     
-    "use_waveform": true,
+    "waveform_mode": "derivatives",
 
-
-    // --generator_type     : "baseline" | "mingru"
-    // --discriminator_type : "single"   | "multi_scale"
-    // --use_ssl_loss       : flag to enable SSL loss
-    // --ssl_model_name     : NeMo SSL model name
-    // --ssl_loss_weight    : weight for SSL loss
-  
 
     "generator_type": "baseline",
     "discriminator_type": "single",
@@ -37,7 +30,6 @@
     "ssl_model_name": "nvidia/ssl_en_nest_xlarge_v1.0",
     "ssl_loss_weight": 0.1,
 
-    // for multi_scale discriminator
     "discriminator_resolutions": [[400, 100, 400], [1024, 120, 600], [256, 50, 120]],
 
     "loss_weights": {

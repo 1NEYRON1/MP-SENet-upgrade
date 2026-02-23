@@ -207,7 +207,7 @@ def train(rank, a, h):
             clean_mag, clean_pha, clean_com = mag_pha_stft(clean_audio, h.n_fft, h.hop_size, h.win_size, h.compress_factor)
             noisy_mag, noisy_pha, noisy_com = mag_pha_stft(noisy_audio, h.n_fft, h.hop_size, h.win_size, h.compress_factor)
 
-            if hasattr(h, 'use_waveform') and h.use_waveform:
+            if hasattr(h, 'waveform_mode') and h.waveform_mode == "stack":
                 mag_g, pha_g, com_g = generator(noisy_mag, noisy_pha, noisy_com)
             else:
                 mag_g, pha_g, com_g = generator(noisy_mag, noisy_pha)
@@ -360,7 +360,7 @@ def train(rank, a, h):
                                 noisy_audio_v, h.n_fft, h.hop_size, h.win_size, h.compress_factor)
 
                             mag_g_v, pha_g_v, com_g_v = generator(noisy_mag_v, noisy_pha_v)
-                            if hasattr(h, 'use_waveform') and h.use_waveform:
+                            if hasattr(h, 'waveform_mode') and h.waveform_mode == "stack":
                                 mag_g, pha_g, com_g = generator(noisy_mag_v, noisy_pha_v, noisy_com_v)
                             else:
                                 mag_g, pha_g, com_g = generator(noisy_mag_v, noisy_pha_v)

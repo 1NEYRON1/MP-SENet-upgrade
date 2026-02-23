@@ -12,9 +12,7 @@
     "num_tsconformers": 4,
     "beta": 2.0,
     
-    "use_waveform": true,
-
-    "use_rope": false,
+    "waveform_mode": "derivatives",
 
     "sampling_rate": 16000,
     "segment_size": 32000,
@@ -28,7 +26,5 @@
         "dist_backend": "nccl",
         "dist_url": "tcp://localhost:54321",
         "world_size": 1
-    },
-
-    "mingru": false
+    }
 }
