@@ -6,6 +6,7 @@ from models.rope_attn import RopeTransformerBlock
 from utils import LearnableSigmoid2d
 from pesq import pesq
 from joblib import Parallel, delayed
+import torch.nn.functional as F
 
 class SPConvTranspose2d(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, r=1):
@@ -142,9 +143,15 @@ class MPNet(nn.Module):
     def __init__(self, h, num_tsblocks=4):
         super(MPNet, self).__init__()
         self.h = h
-        remove_gru = hasattr(h, 'remove_gru') and h.remove_gru
-        self.num_tscblocks = num_tsblocks if not remove_gru else 12
-        self.dense_encoder = DenseEncoder(h, in_channel=2)
+        self.num_tscblocks = num_tsblocks
+        
+        self.in_channel = 2
+        if hasattr(self.h, 'waveform_mode') and self.h.waveform_mode == "stack":
+            self.in_channel = 4
+        elif hasattr(self.h, 'waveform_mode') and self.h.waveform_mode == "derivatives":
+            self.in_channel = 6
+            
+        self.dense_encoder = DenseEncoder(h, in_channel=self.in_channel)
 
         self.TSTransformer = nn.ModuleList([])
         for i in range(self.num_tscblocks):
@@ -153,10 +160,37 @@ class MPNet(nn.Module):
         self.mask_decoder = MaskDecoder(h, out_channel=1)
         self.phase_decoder = PhaseDecoder(h, out_channel=1)
 
-    def forward(self, noisy_amp, noisy_pha): # [B, F, T]
+    def forward(self, noisy_amp, noisy_pha, noisy_com=None): # [B, F, T]
+        
+        if hasattr(self.h, 'waveform_mode') and self.h.waveform_mode == "stack":
+            if noisy_com is None:
+                raise ValueError("noisy_com required in waveform mode")
+            noisy_real = noisy_com[..., 0]
+            noisy_imag = noisy_com[..., 1]
+            
+            # noisy_real = noisy_amp * torch.cos(noisy_pha)
+            # noisy_imag = noisy_amp * torch.sin(noisy_pha)
+            
+            x = torch.stack((noisy_amp, noisy_pha, noisy_real, noisy_imag), dim=-1).permute(0, 3, 2, 1) # [B, 4, T, F]
+        elif hasattr(self.h, 'waveform_mode') and self.h.waveform_mode == "derivatives":
+            cosp = torch.cos(noisy_pha)
+            sinp = torch.sin(noisy_pha)
 
-        x = torch.stack((noisy_amp, noisy_pha), dim=-1).permute(0, 3, 2, 1) # [B, 2, T, F]
+            gd = torch.diff(noisy_pha, dim=1)
+            iaf = torch.diff(noisy_pha, dim=2)
 
+            gd  = F.pad(gd,  (0,0,0,1))
+            iaf = F.pad(iaf, (0,1,0,0))
+
+            # anti-wrapping
+            two_pi = 2 * np.pi
+            gd  = gd  - torch.round(gd  / two_pi) * two_pi
+            iaf = iaf - torch.round(iaf / two_pi) * two_pi
+
+            x = torch.stack((noisy_amp, noisy_pha, cosp, sinp, gd, iaf), dim=-1).permute(0, 3, 2, 1)
+        else:
+            x = torch.stack((noisy_amp, noisy_pha), dim=-1).permute(0, 3, 2, 1) # [B, 2, T, F]
+            
         x = self.dense_encoder(x)
 
         for i in range(self.num_tscblocks):

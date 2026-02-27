@@ -18,15 +18,10 @@
     "hop_size": 100,
     "win_size": 400,
 
-    "num_workers": 4,
+    "num_workers": 30,
+    
+    "waveform_mode": "",
 
-
-    // --generator_type     : "baseline" | "mingru"
-    // --discriminator_type : "single"   | "multi_scale"
-    // --use_ssl_loss       : flag to enable SSL loss
-    // --ssl_model_name     : NeMo SSL model name
-    // --ssl_loss_weight    : weight for SSL loss
-  
 
     "generator_type": "baseline",
     "discriminator_type": "single",
