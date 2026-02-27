@@ -36,6 +36,9 @@
     "ssl_model_name": "nvidia/ssl_en_nest_xlarge_v1.0",
     "ssl_loss_weight": 0.1,
 
+    "use_rope": false,
+    "remove_gru": false,
+
     // for multi_scale discriminator
     "discriminator_resolutions": [[400, 100, 400], [1024, 120, 600], [256, 50, 120]],
 
