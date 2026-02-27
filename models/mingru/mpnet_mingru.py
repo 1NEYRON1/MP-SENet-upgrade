@@ -7,9 +7,9 @@ Uses inheritance to replace GRU with MinGRU in FFN blocks.
 import torch.nn as nn
 
 from .min_gru import MinGRU
-from models.mpnet.model import MPNet
-from models.mpnet.transformer import FFN, TransformerBlock
-from models.mpnet.model import TSTransformerBlock
+from models.model import MPNet
+from models.transformer import FFN, TransformerBlock
+from models.model import TSTransformerBlock
 
 
 class MinFFN(FFN):
