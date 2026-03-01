@@ -205,7 +205,7 @@ def train(a, h):
             )
 
             with autocast("cuda", dtype=torch.bfloat16):
-                mag_g, pha_g, com_g = generator(noisy_mag, noisy_pha)
+                mag_g, pha_g, com_g, moe_aux_loss = generator(noisy_mag, noisy_pha)
 
             audio_g = mag_pha_istft(
                 mag_g.float(), pha_g.float(), h.n_fft, h.hop_size, h.win_size, h.compress_factor
@@ -263,6 +263,7 @@ def train(a, h):
                     + loss_stft * w["stft"]
                     + loss_metric * w["metric"]
                     + loss_time * w["time"]
+                    + moe_aux_loss
                 )
 
             loss_gen_all.backward()
@@ -280,7 +281,7 @@ def train(a, h):
                     desc = (
                         f"{pesq_str}Gen={loss_gen_all.item():.3f} Disc={loss_disc_all.item():.3f} "
                         f"Mag={loss_mag.item():.3f} Pha={loss_pha.item():.3f} "
-                        f"Time={loss_time.item():.3f}"
+                        f"Time={loss_time.item():.3f} "
                     )
                     progress.update(task_id, description=desc)
                     logger.info(
@@ -335,10 +336,50 @@ def train(a, h):
                     sw.add_scalar("Training/Consistency Loss", loss_stft.item() / 2, steps)
                     sw.add_scalar("Training/Learning Rate", scheduler_g.get_last_lr()[0], steps)
 
+                    # MoE logging
+                    moe_config = getattr(h, "moe", None)
+                    if moe_config and moe_config.get("enabled", False):
+                        base_gen = (
+                            generator.module._orig_mod if distributed else generator._orig_mod
+                        )
+                        for layer_idx, tsc in enumerate(base_gen.TSTransformer):
+                            for path_name, tfm in [
+                                ("time", tsc.time_transformer),
+                                ("freq", tsc.freq_transformer),
+                            ]:
+                                ffn = tfm.ffn
+                                if hasattr(ffn, "_last_token_coverage"):
+                                    prefix = f"MoE/Layer{layer_idx}_{path_name}"
+                                    if ffn._last_expert_counts is not None:
+                                        sw.add_histogram(
+                                            f"{prefix}/Expert_Counts",
+                                            ffn._last_expert_counts,
+                                            steps,
+                                        )
+                                        sw.add_scalar(
+                                            f"{prefix}/Load_Std",
+                                            ffn._last_expert_counts.float().std().item(),
+                                            steps,
+                                        )
+                                    if ffn._last_token_coverage is not None:
+                                        sw.add_scalar(
+                                            f"{prefix}/Token_Coverage",
+                                            ffn._last_token_coverage.item(),
+                                            steps,
+                                        )
+                                    if ffn._last_avg_experts_per_token is not None:
+                                        sw.add_scalar(
+                                            f"{prefix}/Avg_Experts",
+                                            ffn._last_avg_experts_per_token.item(),
+                                            steps,
+                                        )
+
                 # Validation
                 if steps % h.validation_interval == 0 and steps != 0:
                     progress.update(task_id, description="[yellow]Validating...[/yellow]")
-                    val_task_id = progress.add_task("[yellow]Validation", total=len(validation_loader))
+                    val_task_id = progress.add_task(
+                        "[yellow]Validation", total=len(validation_loader)
+                    )
                     generator.eval()
                     torch.cuda.empty_cache()
                     audios_r, audios_g = [], []
@@ -360,7 +401,7 @@ def train(a, h):
                             )
 
                             with autocast("cuda", dtype=torch.bfloat16):
-                                mag_g, pha_g, com_g = generator(noisy_mag, noisy_pha)
+                                mag_g, pha_g, com_g, _ = generator(noisy_mag, noisy_pha)
 
                             audio_g = mag_pha_istft(
                                 mag_g.float(),

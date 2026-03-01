@@ -124,17 +124,24 @@ class TSTransformerBlock(nn.Module):
     def __init__(self, h):
         super().__init__()
         self.h = h
-        self.time_transformer = TransformerBlock(d_model=h.dense_channel, n_heads=h.n_heads)
-        self.freq_transformer = TransformerBlock(d_model=h.dense_channel, n_heads=h.n_heads)
+        moe_config = getattr(h, "moe", None)
+        self.time_transformer = TransformerBlock(
+            d_model=h.dense_channel, n_heads=h.n_heads, moe_config=moe_config
+        )
+        self.freq_transformer = TransformerBlock(
+            d_model=h.dense_channel, n_heads=h.n_heads, moe_config=moe_config
+        )
 
     def forward(self, x):
         b, c, t, f = x.size()
         x = x.permute(0, 3, 2, 1).contiguous().view(b * f, t, c)
-        x = self.time_transformer(x) + x
+        x_out, aux_time = self.time_transformer(x)
+        x = x_out + x
         x = x.view(b, f, t, c).permute(0, 2, 1, 3).contiguous().view(b * t, f, c)
-        x = self.freq_transformer(x) + x
+        x_out, aux_freq = self.freq_transformer(x)
+        x = x_out + x
         x = x.view(b, t, f, c).permute(0, 3, 1, 2)
-        return x
+        return x, aux_time + aux_freq
 
 
 class MPNet(nn.Module):
@@ -155,8 +162,10 @@ class MPNet(nn.Module):
         x = torch.stack((noisy_amp, noisy_pha), dim=-1).permute(0, 3, 2, 1)  # [B, 2, T, F]
         x = self.dense_encoder(x)
 
+        total_aux = torch.tensor(0.0, device=x.device)
         for i in range(self.num_tscblocks):
-            x = self.TSTransformer[i](x)
+            x, aux = self.TSTransformer[i](x)
+            total_aux = total_aux + aux
 
         denoised_amp = noisy_amp * self.mask_decoder(x)
         denoised_pha = self.phase_decoder(x)
@@ -164,7 +173,7 @@ class MPNet(nn.Module):
             (denoised_amp * torch.cos(denoised_pha), denoised_amp * torch.sin(denoised_pha)), dim=-1
         )
 
-        return denoised_amp, denoised_pha, denoised_com
+        return denoised_amp, denoised_pha, denoised_com, total_aux
 
 
 def phase_losses(phase_r, phase_g):

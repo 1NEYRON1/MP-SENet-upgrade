@@ -1,3 +1,4 @@
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn import GRU, Dropout, LayerNorm, Linear, MultiheadAttention
@@ -24,7 +25,7 @@ class FFN(nn.Module):
 
 
 class TransformerBlock(nn.Module):
-    def __init__(self, d_model, n_heads, bidirectional=True, dropout=0):
+    def __init__(self, d_model, n_heads, bidirectional=True, dropout=0, moe_config=None):
         super().__init__()
 
         self.norm1 = LayerNorm(d_model)
@@ -32,7 +33,22 @@ class TransformerBlock(nn.Module):
         self.dropout1 = Dropout(dropout)
 
         self.norm2 = LayerNorm(d_model)
-        self.ffn = FFN(d_model, bidirectional=bidirectional)
+
+        self.use_moe = moe_config is not None and moe_config.get("enabled", False)
+        if self.use_moe:
+            from models.moe import MoEFFN
+
+            self.ffn = MoEFFN(
+                d_model=d_model,
+                num_experts=moe_config.get("num_experts", 8),
+                capacity_factor=moe_config.get("capacity_factor", 2.0),
+                expert_ffn_dim=moe_config.get("expert_ffn_dim", 128),
+                bidirectional=bidirectional,
+                dropout=dropout,
+            )
+        else:
+            self.ffn = FFN(d_model, bidirectional=bidirectional)
+
         self.dropout2 = Dropout(dropout)
 
         self.norm3 = LayerNorm(d_model)
@@ -45,9 +61,13 @@ class TransformerBlock(nn.Module):
         x = x + self.dropout1(xt)
 
         xt = self.norm2(x)
-        xt = self.ffn(xt)
+        if self.use_moe:
+            xt, aux_loss = self.ffn(xt)
+        else:
+            xt = self.ffn(xt)
+            aux_loss = torch.tensor(0.0, device=x.device)
         x = x + self.dropout2(xt)
 
         x = self.norm3(x)
 
-        return x
+        return x, aux_loss

@@ -55,7 +55,7 @@ def inference(a):
                 noisy_wav, h.n_fft, h.hop_size, h.win_size, h.compress_factor
             )
             with autocast("cuda", dtype=torch.bfloat16):
-                amp_g, pha_g, _ = model(noisy_amp, noisy_pha)
+                amp_g, pha_g, _, _ = model(noisy_amp, noisy_pha)
             audio_g = mag_pha_istft(
                 amp_g.float(), pha_g.float(), h.n_fft, h.hop_size, h.win_size, h.compress_factor
             )
