@@ -145,7 +145,7 @@ class MPNet(nn.Module):
         self.dense_encoder = DenseEncoder(h, in_channel=2)
 
         self.TSTransformer = nn.ModuleList([])
-        for i in range(h.num_tsblocks):
+        for _i in range(h.num_tsblocks):
             self.TSTransformer.append(TSTransformerBlock(h))
 
         self.mask_decoder = MaskDecoder(h, out_channel=1)

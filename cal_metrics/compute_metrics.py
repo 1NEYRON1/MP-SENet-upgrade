@@ -9,17 +9,17 @@ from scipy.fftpack import fft
 from scipy.io import wavfile
 from scipy.linalg import norm, toeplitz
 
-""" 
+"""
 This is a python script which can be regarded as implementation of matlab script "compute_metrics.m".
 
-Usage: 
+Usage:
     pesq, csig, cbak, covl, ssnr, stoi = compute_metrics(cleanFile, enhancedFile, Fs, path)
     cleanFile: clean audio as array or path if path is equal to 1
     enhancedFile: enhanced audio as array or path if path is equal to 1
     Fs: sampling rate, usually equals to 8000 or 16000 Hz
-    path: whether the "cleanFile" and "enhancedFile" arguments are in .wav format or in numpy array format, 
+    path: whether the "cleanFile" and "enhancedFile" arguments are in .wav format or in numpy array format,
           1 indicates "in .wav format"
-          
+
 Example call:
     pesq_output, csig_output, cbak_output, covl_output, ssnr_output, stoi_output = \
             compute_metrics(target_audio, output_audio, 16000, 0)
@@ -57,7 +57,7 @@ def compute_metrics(cleanFile, enhancedFile, Fs, path):
     llr_mean = np.mean(LLRs[0:LLR_len])
 
     # compute the SNRseg
-    snr_dist, segsnr_dist = snr(data1, data2, sampling_rate1)
+    _snr_dist, segsnr_dist = snr(data1, data2, sampling_rate1)
     segSNR = np.mean(segsnr_dist)
 
     # compute the pesq
@@ -293,8 +293,8 @@ def llr(clean_speech, processed_speech, sample_rate):
         processed_frame = np.multiply(processed_frame, window)
 
         # (2) Get the autocorrelation lags and LPC parameters used to compute the LLR measure.
-        R_clean, Ref_clean, A_clean = lpcoeff(clean_frame, P)
-        R_processed, Ref_processed, A_processed = lpcoeff(processed_frame, P)
+        R_clean, _Ref_clean, A_clean = lpcoeff(clean_frame, P)
+        _R_processed, _Ref_processed, A_processed = lpcoeff(processed_frame, P)
 
         # (3) Compute the LLR measure
         numerator = np.dot(np.matmul(A_processed, toeplitz(R_clean)), A_processed)

@@ -192,7 +192,7 @@ def train(a, h):
             progress.start()
             task_id = progress.add_task("", total=len(train_loader))
 
-        for i, batch in enumerate(train_loader):
+        for _i, batch in enumerate(train_loader):
             clean_audio, noisy_audio = batch
             clean_audio = clean_audio.to(device, non_blocking=True)
             noisy_audio = noisy_audio.to(device, non_blocking=True)
@@ -210,7 +210,7 @@ def train(a, h):
             audio_g = mag_pha_istft(
                 mag_g.float(), pha_g.float(), h.n_fft, h.hop_size, h.win_size, h.compress_factor
             )
-            mag_g_hat, pha_g_hat, com_g_hat = mag_pha_stft(
+            mag_g_hat, _pha_g_hat, com_g_hat = mag_pha_stft(
                 audio_g, h.n_fft, h.hop_size, h.win_size, h.compress_factor
             )
 
@@ -347,7 +347,7 @@ def train(a, h):
                     val_com_err_tot = 0
                     val_stft_err_tot = 0
                     with torch.no_grad():
-                        for j, batch in enumerate(validation_loader):
+                        for j, batch in enumerate(validation_loader):  # noqa: B007
                             clean_audio, noisy_audio = batch
                             clean_audio = clean_audio.to(device, non_blocking=True)
                             noisy_audio = noisy_audio.to(device, non_blocking=True)
@@ -370,7 +370,7 @@ def train(a, h):
                                 h.win_size,
                                 h.compress_factor,
                             )
-                            mag_g_hat, pha_g_hat, com_g_hat = mag_pha_stft(
+                            mag_g_hat, _pha_g_hat, com_g_hat = mag_pha_stft(
                                 audio_g, h.n_fft, h.hop_size, h.win_size, h.compress_factor
                             )
                             audios_r += torch.split(clean_audio, 1, dim=0)  # [1, T] * B

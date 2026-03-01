@@ -55,7 +55,8 @@ class AsyncPESQ:
 
     def submit(self, clean_list, noisy_list, sr=16000):
         self._futures = [
-            self.executor.submit(cal_pesq, c, n, sr) for c, n in zip(clean_list, noisy_list)
+            self.executor.submit(cal_pesq, c, n, sr)
+            for c, n in zip(clean_list, noisy_list, strict=True)
         ]
 
     def collect(self):
