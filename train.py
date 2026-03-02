@@ -17,11 +17,14 @@ from transformers import get_cosine_schedule_with_warmup
 
 from dataset import Dataset, get_dataset_filelist, mag_pha_istft, mag_pha_stft
 from models.discriminator import AsyncPESQ, MetricDiscriminator
-from models.model import MPNet, pesq_score, phase_losses
+from models.generator import LKFCA_Net, pesq_score, phase_losses
+
 from utils import load_checkpoint, load_config, save_checkpoint, scan_checkpoint, set_seed
 
 torch.backends.cudnn.benchmark = True
 torch.set_float32_matmul_precision("high")
+
+torch.autograd.set_detect_anomaly(True)
 
 logger = logging.getLogger("train")
 
@@ -36,8 +39,8 @@ def train(a, h):
     device = torch.device("cuda", local_rank)
     torch.cuda.set_device(device)
 
-    generator = MPNet(h).to(device)
-    discriminator = MetricDiscriminator(dim=h.disc_dim, dropout=h.disc_dropout).to(device)
+    generator = LKFCA_Net(h).to(device)
+    discriminator = MetricDiscriminator().to(device)
 
     if rank == 0:
         console = Console()
@@ -78,7 +81,7 @@ def train(a, h):
         last_epoch = state_dict_do["epoch"]
 
     generator = torch.compile(generator, mode="reduce-overhead")
-    discriminator = torch.compile(discriminator)
+    # discriminator = torch.compile(discriminator)
 
     if distributed:
         generator = DistributedDataParallel(generator, device_ids=[local_rank]).to(device)
@@ -95,18 +98,21 @@ def train(a, h):
         optim_g.load_state_dict(state_dict_do["optim_g"])
         optim_d.load_state_dict(state_dict_do["optim_d"])
 
-    scheduler_g = get_cosine_schedule_with_warmup(
-        optim_g,
-        num_warmup_steps=h.warmup_epochs,
-        num_training_steps=h.epochs,
-        last_epoch=last_epoch,
-    )
-    scheduler_d = get_cosine_schedule_with_warmup(
-        optim_d,
-        num_warmup_steps=h.warmup_epochs,
-        num_training_steps=h.epochs,
-        last_epoch=last_epoch,
-    )
+    # scheduler_g = get_cosine_schedule_with_warmup(
+    #     optim_g,
+    #     num_warmup_steps=h.warmup_epochs,
+    #     num_training_steps=h.epochs,
+    #     last_epoch=last_epoch,
+    # )
+    # scheduler_d = get_cosine_schedule_with_warmup(
+    #     optim_d,
+    #     num_warmup_steps=h.warmup_epochs,
+    #     num_training_steps=h.epochs,
+    #     last_epoch=last_epoch,
+    # )
+    
+    scheduler_g = torch.optim.lr_scheduler.ExponentialLR(optim_g, gamma=h.lr_decay, last_epoch=last_epoch)
+    scheduler_d = torch.optim.lr_scheduler.ExponentialLR(optim_d, gamma=h.lr_decay, last_epoch=last_epoch)
 
     if state_dict_do is not None:
         scheduler_g.load_state_dict(state_dict_do["scheduler_g"])
@@ -244,7 +250,7 @@ def train(a, h):
                 # L2 Magnitude Loss
                 loss_mag = F.mse_loss(clean_mag, mag_g)
                 # Anti-wrapping Phase Loss
-                loss_ip, loss_gd, loss_iaf = phase_losses(clean_pha, pha_g)
+                loss_ip, loss_gd, loss_iaf = phase_losses(clean_pha, pha_g, h)
                 loss_pha = loss_ip + loss_gd + loss_iaf
                 # L2 Complex Loss
                 loss_com = F.mse_loss(clean_com, com_g) * 2
@@ -379,7 +385,7 @@ def train(a, h):
 
                             val_mag_err_tot += F.mse_loss(clean_mag, mag_g.float()).item()
                             val_ip_err, val_gd_err, val_iaf_err = phase_losses(
-                                clean_pha, pha_g.float()
+                                clean_pha, pha_g.float(), h
                             )
                             val_pha_err_tot += (val_ip_err + val_gd_err + val_iaf_err).item()
                             val_com_err_tot += F.mse_loss(clean_com, com_g.float()).item()

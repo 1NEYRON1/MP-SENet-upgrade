@@ -12,7 +12,8 @@ training:
   learning_rate: 0.0005
   adam_b1: 0.8
   adam_b2: 0.99
-  batch_size: 12
+  lr_decay: 0.99
+  batch_size: 8
   epochs: 400
   warmup_epochs: 10
   loss_weights:
@@ -38,15 +39,19 @@ data:
   n_fft: 400
   hop_size: 100
   win_size: 400
+<<<<<<< HEAD
   num_workers: 4
   data_type: flac
+=======
+  num_workers: 30
+>>>>>>> 72e10ff (add primeknet train)
 
 paths:
-  checkpoint_path: cp_model
-  input_clean_wavs_dir: /work/VoiceBank+DEMAND/wav_clean
-  input_noisy_wavs_dir: /work/VoiceBank+DEMAND/wav_noisy
-  input_training_file: /work/VoiceBank+DEMAND/training.txt
-  input_validation_file: /work/VoiceBank+DEMAND/test.txt
+  checkpoint_path: primeknet
+  input_clean_wavs_dir: VoiceBank+DEMAND/wav_clean
+  input_noisy_wavs_dir: VoiceBank+DEMAND/wav_noisy
+  input_training_file: VoiceBank+DEMAND/training.txt
+  input_validation_file: VoiceBank+DEMAND/test.txt
 
 reproducibility:
   seed: 1234
