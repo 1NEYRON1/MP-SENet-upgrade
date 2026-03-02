@@ -1,65 +1,69 @@
-import argparse
+import warnings
+warnings.simplefilter(action='ignore', category=FutureWarning)
 import logging
 import os
-import shutil
 import time
-
+import argparse
+import shutil
+import yaml
 import torch
 import torch.nn.functional as F
-from rich.console import Console
-from rich.progress import BarColumn, MofNCompleteColumn, Progress, TextColumn, TimeRemainingColumn
-from torch.amp import autocast
+from torch.utils.tensorboard import SummaryWriter
+from torch.utils.data import DistributedSampler, DataLoader
 from torch.distributed import init_process_group
 from torch.nn.parallel import DistributedDataParallel
-from torch.utils.data import DataLoader, DistributedSampler
-from torch.utils.tensorboard import SummaryWriter
-from transformers import get_cosine_schedule_with_warmup
-
-from dataset import Dataset, get_dataset_filelist, mag_pha_istft, mag_pha_stft
-from models.discriminator import AsyncPESQ, MetricDiscriminator
+from torch.amp import autocast
+from torch.optim.lr_scheduler import ExponentialLR
+from types import SimpleNamespace
+from rich.progress import Progress, TextColumn, BarColumn, MofNCompleteColumn, TimeRemainingColumn
+from rich.console import Console
+#from dataset import Dataset, mag_pha_stft, mag_pha_istft, get_dataset_filelist
+from dataset import Dataset, DatasetCSV, mag_pha_stft, mag_pha_istft, get_dataset_entries, _infer_dataset_root
 from models.model import MPNet, pesq_score, phase_losses
-from utils import load_checkpoint, load_config, save_checkpoint, scan_checkpoint, set_seed
+from models.discriminator import MetricDiscriminator, AsyncPESQ
+from utils import scan_checkpoint, load_checkpoint, save_checkpoint
 
 torch.backends.cudnn.benchmark = True
-torch.set_float32_matmul_precision("high")
+torch.set_float32_matmul_precision('high')
+#torch._inductor.config.triton.cudagraph_skip_dynamic_graphs = True
 
-logger = logging.getLogger("train")
+logger = logging.getLogger('train')
 
 
 def train(a, h):
-    local_rank = int(os.environ.get("LOCAL_RANK", "0"))
-    world_size = int(os.environ.get("WORLD_SIZE", "1"))
-    rank = int(os.environ.get("RANK", "0"))
+    local_rank = int(os.environ.get('LOCAL_RANK', '0'))
+    world_size = int(os.environ.get('WORLD_SIZE', '1'))
+    rank = int(os.environ.get('RANK', '0'))
     distributed = world_size > 1
     if distributed:
-        init_process_group(backend="nccl")
-    device = torch.device("cuda", local_rank)
+        init_process_group(backend='nccl')
+    device = torch.device('cuda', local_rank)
     torch.cuda.set_device(device)
 
+    torch.cuda.manual_seed(h.seed)
+
     generator = MPNet(h).to(device)
-    discriminator = MetricDiscriminator(dim=h.disc_dim, dropout=h.disc_dropout).to(device)
+    discriminator = MetricDiscriminator().to(device)
 
     if rank == 0:
         console = Console()
-        os.makedirs(h.checkpoint_path, exist_ok=True)
-        os.makedirs(os.path.join(h.checkpoint_path, "logs"), exist_ok=True)
+        os.makedirs(a.checkpoint_path, exist_ok=True)
+        os.makedirs(os.path.join(a.checkpoint_path, 'logs'), exist_ok=True)
 
-        fh = logging.FileHandler(os.path.join(h.checkpoint_path, "train.log"))
-        fh.setFormatter(logging.Formatter("%(asctime)s | %(message)s", datefmt="%Y-%m-%d %H:%M:%S"))
+        fh = logging.FileHandler(os.path.join(a.checkpoint_path, 'train.log'))
+        fh.setFormatter(logging.Formatter('%(asctime)s | %(message)s', datefmt='%Y-%m-%d %H:%M:%S'))
         logger.setLevel(logging.INFO)
         logger.addHandler(fh)
 
         num_params = sum(p.numel() for p in generator.parameters())
-        logger.info("Generator:\n%s", generator)
-        logger.info("Total Parameters: %.3fM", num_params / 1e6)
-        logger.info("Checkpoints directory: %s", h.checkpoint_path)
-        console.print(
-            f"Parameters: [bold]{num_params / 1e6:.3f}M[/bold] | Checkpoints: {h.checkpoint_path}"
-        )
+        logger.info('Generator:\n%s', generator)
+        logger.info('Total Parameters: %.3fM', num_params / 1e6)
+        logger.info('Checkpoints directory: %s', a.checkpoint_path)
+        console.print(f'Parameters: [bold]{num_params / 1e6:.3f}M[/bold] | Checkpoints: {a.checkpoint_path}')
 
-    if os.path.isdir(h.checkpoint_path):
-        cp_g = scan_checkpoint(h.checkpoint_path, "g_")
-        cp_do = scan_checkpoint(h.checkpoint_path, "do_")
+    if os.path.isdir(a.checkpoint_path):
+        cp_g = scan_checkpoint(a.checkpoint_path, 'g_')
+        cp_do = scan_checkpoint(a.checkpoint_path, 'do_')
 
     steps = 0
     if cp_g is None or cp_do is None:
@@ -68,113 +72,118 @@ def train(a, h):
     else:
         state_dict_g = load_checkpoint(cp_g, device)
         state_dict_do = load_checkpoint(cp_do, device)
-        gen_state = {k.removeprefix("_orig_mod."): v for k, v in state_dict_g["generator"].items()}
-        disc_state = {
-            k.removeprefix("_orig_mod."): v for k, v in state_dict_do["discriminator"].items()
-        }
+        gen_state = {k.removeprefix('_orig_mod.'): v for k, v in state_dict_g['generator'].items()}
+        disc_state = {k.removeprefix('_orig_mod.'): v for k, v in state_dict_do['discriminator'].items()}
         generator.load_state_dict(gen_state)
         discriminator.load_state_dict(disc_state)
-        steps = state_dict_do["steps"] + 1
-        last_epoch = state_dict_do["epoch"]
+        steps = state_dict_do['steps'] + 1
+        last_epoch = state_dict_do['epoch']
 
-    generator = torch.compile(generator, mode="reduce-overhead")
+    generator = torch.compile(generator, mode='reduce-overhead')
     discriminator = torch.compile(discriminator)
 
     if distributed:
         generator = DistributedDataParallel(generator, device_ids=[local_rank]).to(device)
         discriminator = DistributedDataParallel(discriminator, device_ids=[local_rank]).to(device)
 
-    optim_g = torch.optim.AdamW(
-        generator.parameters(), h.learning_rate, betas=[h.adam_b1, h.adam_b2]
-    )
-    optim_d = torch.optim.AdamW(
-        discriminator.parameters(), h.learning_rate, betas=[h.adam_b1, h.adam_b2]
-    )
+    optim_g = torch.optim.AdamW(generator.parameters(), h.learning_rate, betas=[h.adam_b1, h.adam_b2])
+    optim_d = torch.optim.AdamW(discriminator.parameters(), h.learning_rate, betas=[h.adam_b1, h.adam_b2])
 
     if state_dict_do is not None:
-        optim_g.load_state_dict(state_dict_do["optim_g"])
-        optim_d.load_state_dict(state_dict_do["optim_d"])
+        optim_g.load_state_dict(state_dict_do['optim_g'])
+        optim_d.load_state_dict(state_dict_do['optim_d'])
 
-    scheduler_g = get_cosine_schedule_with_warmup(
-        optim_g,
-        num_warmup_steps=h.warmup_epochs,
-        num_training_steps=h.epochs,
-        last_epoch=last_epoch,
-    )
-    scheduler_d = get_cosine_schedule_with_warmup(
-        optim_d,
-        num_warmup_steps=h.warmup_epochs,
-        num_training_steps=h.epochs,
-        last_epoch=last_epoch,
-    )
+    scheduler_g = ExponentialLR(optim_g, gamma=h.lr_decay, last_epoch=last_epoch)
+    scheduler_d = ExponentialLR(optim_d, gamma=h.lr_decay, last_epoch=last_epoch)
 
-    if state_dict_do is not None:
-        scheduler_g.load_state_dict(state_dict_do["scheduler_g"])
-        scheduler_d.load_state_dict(state_dict_do["scheduler_d"])
+    # training_indexes, validation_indexes = get_dataset_filelist(a)
 
-    training_indexes, validation_indexes = get_dataset_filelist(h)
+    # trainset = Dataset(training_indexes, a.input_clean_wavs_dir, a.input_noisy_wavs_dir, h.segment_size, h.sampling_rate,
+    #                    split=True, n_cache_reuse=0, shuffle=not distributed, device=device)
 
-    trainset = Dataset(
-        training_indexes,
-        h.input_clean_wavs_dir,
-        h.input_noisy_wavs_dir,
-        h.segment_size,
-        h.sampling_rate,
-        split=True,
-        n_cache_reuse=0,
-        shuffle=not distributed,
-        device=device,
-        seed=h.seed,
-    )
+    training_entries, validation_entries = get_dataset_entries(a)
 
-    train_sampler = DistributedSampler(trainset) if distributed else None
-
-    train_loader = DataLoader(
-        trainset,
-        num_workers=h.num_workers,
-        shuffle=False,
-        sampler=train_sampler,
-        batch_size=h.batch_size,
-        pin_memory=True,
-        drop_last=True,
-        persistent_workers=True,
-        prefetch_factor=2,
-    )
-    if rank == 0:
-        validset = Dataset(
-            validation_indexes,
-            h.input_clean_wavs_dir,
-            h.input_noisy_wavs_dir,
+    if isinstance(training_entries[0], dict):  # CSV mode (for new dataset)
+        dataset_root = _infer_dataset_root(a.input_clean_wavs_dir, a.input_noisy_wavs_dir)
+        trainset = DatasetCSV(
+            training_entries,
+            dataset_root=dataset_root,
+            segment_size=h.segment_size,
+            sampling_rate=h.sampling_rate,
+            split=True,
+            n_cache_reuse=0,
+            shuffle=not distributed,
+            device=device,
+        )
+    else:  # TXT mode (for VB+demand)
+        trainset = Dataset(
+            training_entries,
+            a.input_clean_wavs_dir,
+            a.input_noisy_wavs_dir,
             h.segment_size,
             h.sampling_rate,
-            split=False,
-            shuffle=False,
+            split=True,
             n_cache_reuse=0,
+            shuffle=not distributed,
             device=device,
         )
 
-        validation_loader = DataLoader(
-            validset,
-            num_workers=1,
-            shuffle=False,
-            sampler=None,
-            batch_size=1,
-            pin_memory=True,
-            drop_last=True,
-            persistent_workers=True,
-            prefetch_factor=2,
-        )
+    train_sampler = DistributedSampler(trainset) if distributed else None
 
-        sw = SummaryWriter(os.path.join(h.checkpoint_path, "logs"))
+    train_loader = DataLoader(trainset, num_workers=h.num_workers, shuffle=False,
+                              sampler=train_sampler,
+                              batch_size=h.batch_size,
+                              pin_memory=True,
+                              drop_last=True,
+                              persistent_workers=True,
+                              prefetch_factor=2)
+    if rank == 0:
+        # validset = Dataset(validation_indexes, a.input_clean_wavs_dir, a.input_noisy_wavs_dir, h.segment_size, h.sampling_rate,
+        #                    split=False, shuffle=False, n_cache_reuse=0, device=device)
+
+        if isinstance(validation_entries[0], dict):
+            dataset_root = _infer_dataset_root(a.input_clean_wavs_dir, a.input_noisy_wavs_dir)
+            validset = DatasetCSV(
+                validation_entries,
+                dataset_root=dataset_root,
+                segment_size=h.segment_size,
+                sampling_rate=h.sampling_rate,
+                split=False,
+                shuffle=False,
+                n_cache_reuse=0,
+                device=device,
+            )
+        else:
+            validset = Dataset(
+                validation_entries,
+                a.input_clean_wavs_dir,
+                a.input_noisy_wavs_dir,
+                h.segment_size,
+                h.sampling_rate,
+                split=False,
+                shuffle=False,
+                n_cache_reuse=0,
+                device=device,
+            )
+
+        validation_loader = DataLoader(validset, num_workers=1, shuffle=False,
+                                       sampler=None,
+                                       batch_size=1,
+                                       pin_memory=True,
+                                       drop_last=True,
+                                       persistent_workers=True,
+                                       prefetch_factor=2)
+
+        sw = SummaryWriter(os.path.join(a.checkpoint_path, 'logs'))
 
     generator.train()
     discriminator.train()
 
-    async_pesq = AsyncPESQ(max_workers=h.train_pesq_workers)
+    async_pesq = AsyncPESQ(max_workers=4)
     best_pesq = 0
     one_labels = torch.ones(h.batch_size, device=device)
 
-    for epoch in range(max(0, last_epoch), h.epochs):
+    for epoch in range(max(0, last_epoch), a.training_epochs):
         if distributed:
             train_sampler.set_epoch(epoch)
 
@@ -182,7 +191,7 @@ def train(a, h):
             epoch_start = time.time()
             desc = ""
             progress = Progress(
-                TextColumn(f"[bold]Epoch {epoch + 1}/{h.epochs}"),
+                TextColumn(f"[bold]Epoch {epoch + 1}/{a.training_epochs}"),
                 BarColumn(bar_width=30),
                 MofNCompleteColumn(),
                 TimeRemainingColumn(compact=True),
@@ -192,37 +201,31 @@ def train(a, h):
             progress.start()
             task_id = progress.add_task("", total=len(train_loader))
 
-        for _i, batch in enumerate(train_loader):
-            clean_audio, noisy_audio = batch
+        for i, batch in enumerate(train_loader):
+            #clean_audio, noisy_audio = batch
+            if len(batch) == 2:
+                clean_audio, noisy_audio = batch
+                meta = None
+            else:
+                clean_audio, noisy_audio, meta = batch  # meta is a dict of lists
             clean_audio = clean_audio.to(device, non_blocking=True)
             noisy_audio = noisy_audio.to(device, non_blocking=True)
 
-            clean_mag, clean_pha, clean_com = mag_pha_stft(
-                clean_audio, h.n_fft, h.hop_size, h.win_size, h.compress_factor
-            )
-            noisy_mag, noisy_pha, _ = mag_pha_stft(
-                noisy_audio, h.n_fft, h.hop_size, h.win_size, h.compress_factor
-            )
+            clean_mag, clean_pha, clean_com = mag_pha_stft(clean_audio, h.n_fft, h.hop_size, h.win_size, h.compress_factor)
+            noisy_mag, noisy_pha, noisy_com = mag_pha_stft(noisy_audio, h.n_fft, h.hop_size, h.win_size, h.compress_factor)
 
-            with autocast("cuda", dtype=torch.bfloat16):
+            with autocast('cuda', dtype=torch.bfloat16):
                 mag_g, pha_g, com_g = generator(noisy_mag, noisy_pha)
 
-            audio_g = mag_pha_istft(
-                mag_g.float(), pha_g.float(), h.n_fft, h.hop_size, h.win_size, h.compress_factor
-            )
-            mag_g_hat, _pha_g_hat, com_g_hat = mag_pha_stft(
-                audio_g, h.n_fft, h.hop_size, h.win_size, h.compress_factor
-            )
+            audio_g = mag_pha_istft(mag_g.float(), pha_g.float(), h.n_fft, h.hop_size, h.win_size, h.compress_factor)
+            mag_g_hat, pha_g_hat, com_g_hat = mag_pha_stft(audio_g, h.n_fft, h.hop_size, h.win_size, h.compress_factor)
 
-            audio_list_r, audio_list_g = (
-                list(clean_audio.cpu().numpy()),
-                list(audio_g.detach().cpu().numpy()),
-            )
+            audio_list_r, audio_list_g = list(clean_audio.cpu().numpy()), list(audio_g.detach().cpu().numpy())
             async_pesq.submit(audio_list_r, audio_list_g, h.sampling_rate)
 
             # Discriminator
             optim_d.zero_grad()
-            with autocast("cuda", dtype=torch.bfloat16):
+            with autocast('cuda', dtype=torch.bfloat16):
                 metric_r = discriminator(clean_mag, clean_mag)
                 metric_g = discriminator(clean_mag, mag_g_hat.detach())
                 loss_disc_r = F.mse_loss(one_labels, metric_r.flatten())
@@ -239,7 +242,7 @@ def train(a, h):
 
             # Generator
             optim_g.zero_grad()
-            with autocast("cuda", dtype=torch.bfloat16):
+            with autocast('cuda', dtype=torch.bfloat16):
                 # L2 Magnitude Loss
                 loss_mag = F.mse_loss(clean_mag, mag_g)
                 # Anti-wrapping Phase Loss
@@ -255,15 +258,7 @@ def train(a, h):
                 metric_g = discriminator(clean_mag, mag_g_hat)
                 loss_metric = F.mse_loss(metric_g.flatten(), one_labels)
 
-                w = h.loss_weights
-                loss_gen_all = (
-                    loss_mag * w["mag"]
-                    + loss_pha * w["pha"]
-                    + loss_com * w["com"]
-                    + loss_stft * w["stft"]
-                    + loss_metric * w["metric"]
-                    + loss_time * w["time"]
-                )
+                loss_gen_all = loss_mag * 0.9 + loss_pha * 0.3 + loss_com * 0.1 + loss_stft * 0.1 + loss_metric * 0.05 + loss_time * 0.2
 
             loss_gen_all.backward()
             optim_g.step()
@@ -271,60 +266,31 @@ def train(a, h):
             if rank == 0:
                 progress.update(task_id, advance=1)
 
-                if steps % h.stdout_interval == 0:
-                    pesq_str = (
-                        f"PESQ={batch_pesq_score.mean().item() * 3.5 + 1:.2f} "
-                        if batch_pesq_score is not None
-                        else ""
-                    )
-                    desc = (
-                        f"{pesq_str}Gen={loss_gen_all.item():.3f} Disc={loss_disc_all.item():.3f} "
-                        f"Mag={loss_mag.item():.3f} Pha={loss_pha.item():.3f} "
-                        f"Time={loss_time.item():.3f}"
-                    )
+                if steps % a.stdout_interval == 0:
+                    pesq_str = f"PESQ={batch_pesq_score.mean().item() * 3.5 + 1:.2f} " if batch_pesq_score is not None else ""
+                    desc = (f"{pesq_str}Gen={loss_gen_all.item():.3f} Disc={loss_disc_all.item():.3f} "
+                            f"Mag={loss_mag.item():.3f} Pha={loss_pha.item():.3f} "
+                            f"Time={loss_time.item():.3f}")
                     progress.update(task_id, description=desc)
                     logger.info(
-                        "Step %d | Gen=%.4f Disc=%.4f Metric=%.4f Mag=%.4f Pha=%.4f Com=%.4f Time=%.4f STFT=%.4f",
-                        steps,
-                        loss_gen_all.item(),
-                        loss_disc_all.item(),
-                        loss_metric.item(),
-                        loss_mag.item(),
-                        loss_pha.item(),
-                        loss_com.item() / 2,
-                        loss_time.item(),
-                        loss_stft.item() / 2,
-                    )
+                        'Step %d | Gen=%.4f Disc=%.4f Metric=%.4f Mag=%.4f Pha=%.4f Com=%.4f Time=%.4f STFT=%.4f',
+                        steps, loss_gen_all.item(), loss_disc_all.item(), loss_metric.item(),
+                        loss_mag.item(), loss_pha.item(), loss_com.item() / 2,
+                        loss_time.item(), loss_stft.item() / 2)
 
                 # Checkpointing
-                if steps % h.checkpoint_interval == 0 and steps != 0:
-                    checkpoint_path = f"{h.checkpoint_path}/g_{steps:08d}"
-                    save_checkpoint(
-                        checkpoint_path,
-                        {
-                            "generator": (
-                                generator.module if distributed else generator
-                            ).state_dict()
-                        },
-                    )
-                    checkpoint_path = f"{h.checkpoint_path}/do_{steps:08d}"
-                    save_checkpoint(
-                        checkpoint_path,
-                        {
-                            "discriminator": (
-                                discriminator.module if distributed else discriminator
-                            ).state_dict(),
-                            "optim_g": optim_g.state_dict(),
-                            "optim_d": optim_d.state_dict(),
-                            "scheduler_g": scheduler_g.state_dict(),
-                            "scheduler_d": scheduler_d.state_dict(),
-                            "steps": steps,
-                            "epoch": epoch,
-                        },
-                    )
+                if steps % a.checkpoint_interval == 0 and steps != 0:
+                    checkpoint_path = "{}/g_{:08d}".format(a.checkpoint_path, steps)
+                    save_checkpoint(checkpoint_path,
+                                    {'generator': (generator.module if distributed else generator).state_dict()})
+                    checkpoint_path = "{}/do_{:08d}".format(a.checkpoint_path, steps)
+                    save_checkpoint(checkpoint_path,
+                                    {'discriminator': (discriminator.module if distributed else discriminator).state_dict(),
+                                     'optim_g': optim_g.state_dict(), 'optim_d': optim_d.state_dict(),
+                                     'steps': steps, 'epoch': epoch})
 
                 # Tensorboard summary logging
-                if steps % h.summary_interval == 0:
+                if steps % a.summary_interval == 0:
                     sw.add_scalar("Training/Generator Loss", loss_gen_all.item(), steps)
                     sw.add_scalar("Training/Discriminator Loss", loss_disc_all.item(), steps)
                     sw.add_scalar("Training/Metric Loss", loss_metric.item(), steps)
@@ -336,9 +302,8 @@ def train(a, h):
                     sw.add_scalar("Training/Learning Rate", scheduler_g.get_last_lr()[0], steps)
 
                 # Validation
-                if steps % h.validation_interval == 0 and steps != 0:
+                if steps % a.validation_interval == 0 and steps != 0:
                     progress.update(task_id, description="[yellow]Validating...[/yellow]")
-                    val_task_id = progress.add_task("[yellow]Validation", total=len(validation_loader))
                     generator.eval()
                     torch.cuda.empty_cache()
                     audios_r, audios_g = [], []
@@ -347,66 +312,46 @@ def train(a, h):
                     val_com_err_tot = 0
                     val_stft_err_tot = 0
                     with torch.no_grad():
-                        for j, batch in enumerate(validation_loader):  # noqa: B007
-                            clean_audio, noisy_audio = batch
+                        for j, batch in enumerate(validation_loader):
+                            if len(batch) == 2:
+                                clean_audio, noisy_audio = batch
+                                meta = None
+                            else:
+                                clean_audio, noisy_audio, meta = batch
+                            #clean_audio, noisy_audio = batch
                             clean_audio = clean_audio.to(device, non_blocking=True)
                             noisy_audio = noisy_audio.to(device, non_blocking=True)
 
-                            clean_mag, clean_pha, clean_com = mag_pha_stft(
-                                clean_audio, h.n_fft, h.hop_size, h.win_size, h.compress_factor
-                            )
-                            noisy_mag, noisy_pha, _ = mag_pha_stft(
-                                noisy_audio, h.n_fft, h.hop_size, h.win_size, h.compress_factor
-                            )
+                            clean_mag, clean_pha, clean_com = mag_pha_stft(clean_audio, h.n_fft, h.hop_size, h.win_size, h.compress_factor)
+                            noisy_mag, noisy_pha, noisy_com = mag_pha_stft(noisy_audio, h.n_fft, h.hop_size, h.win_size, h.compress_factor)
 
-                            with autocast("cuda", dtype=torch.bfloat16):
+                            with autocast('cuda', dtype=torch.bfloat16):
                                 mag_g, pha_g, com_g = generator(noisy_mag, noisy_pha)
 
-                            audio_g = mag_pha_istft(
-                                mag_g.float(),
-                                pha_g.float(),
-                                h.n_fft,
-                                h.hop_size,
-                                h.win_size,
-                                h.compress_factor,
-                            )
-                            mag_g_hat, _pha_g_hat, com_g_hat = mag_pha_stft(
-                                audio_g, h.n_fft, h.hop_size, h.win_size, h.compress_factor
-                            )
-                            audios_r += torch.split(clean_audio, 1, dim=0)  # [1, T] * B
+                            audio_g = mag_pha_istft(mag_g.float(), pha_g.float(), h.n_fft, h.hop_size, h.win_size, h.compress_factor)
+                            mag_g_hat, pha_g_hat, com_g_hat = mag_pha_stft(audio_g, h.n_fft, h.hop_size, h.win_size, h.compress_factor)
+                            audios_r += torch.split(clean_audio, 1, dim=0) # [1, T] * B
                             audios_g += torch.split(audio_g, 1, dim=0)
 
                             val_mag_err_tot += F.mse_loss(clean_mag, mag_g.float()).item()
-                            val_ip_err, val_gd_err, val_iaf_err = phase_losses(
-                                clean_pha, pha_g.float()
-                            )
+                            val_ip_err, val_gd_err, val_iaf_err = phase_losses(clean_pha, pha_g.float())
                             val_pha_err_tot += (val_ip_err + val_gd_err + val_iaf_err).item()
                             val_com_err_tot += F.mse_loss(clean_com, com_g.float()).item()
                             val_stft_err_tot += F.mse_loss(com_g.float(), com_g_hat).item()
-                            progress.update(val_task_id, advance=1)
 
-                        val_mag_err = val_mag_err_tot / (j + 1)
-                        val_pha_err = val_pha_err_tot / (j + 1)
-                        val_com_err = val_com_err_tot / (j + 1)
-                        val_stft_err = val_stft_err_tot / (j + 1)
+                        val_mag_err = val_mag_err_tot / (j+1)
+                        val_pha_err = val_pha_err_tot / (j+1)
+                        val_com_err = val_com_err_tot / (j+1)
+                        val_stft_err = val_stft_err_tot / (j+1)
                         val_pesq_score = pesq_score(audios_r, audios_g, h).item()
 
-                        progress.remove_task(val_task_id)
-                        progress.update(task_id, description=desc)
                         console.print(
                             f"  [green]Val[/green] step {steps} | "
                             f"PESQ: [bold]{val_pesq_score:.3f}[/bold] "
-                            f"Mag: {val_mag_err:.4f} Pha: {val_pha_err:.4f}"
-                        )
+                            f"Mag: {val_mag_err:.4f} Pha: {val_pha_err:.4f}")
                         logger.info(
-                            "Validation step %d | PESQ=%.3f Mag=%.4f Pha=%.4f Com=%.4f STFT=%.4f",
-                            steps,
-                            val_pesq_score,
-                            val_mag_err,
-                            val_pha_err,
-                            val_com_err,
-                            val_stft_err,
-                        )
+                            'Validation step %d | PESQ=%.3f Mag=%.4f Pha=%.4f Com=%.4f STFT=%.4f',
+                            steps, val_pesq_score, val_mag_err, val_pha_err, val_com_err, val_stft_err)
 
                         sw.add_scalar("Validation/PESQ Score", val_pesq_score, steps)
                         sw.add_scalar("Validation/Magnitude Loss", val_mag_err, steps)
@@ -414,19 +359,13 @@ def train(a, h):
                         sw.add_scalar("Validation/Complex Loss", val_com_err, steps)
                         sw.add_scalar("Validation/Consistency Loss", val_stft_err, steps)
 
-                    if epoch >= h.best_checkpoint_start_epoch:
+                    if epoch >= a.best_checkpoint_start_epoch:
                         if val_pesq_score > best_pesq:
                             best_pesq = val_pesq_score
-                            best_checkpoint_path = f"{h.checkpoint_path}/g_best"
-                            save_checkpoint(
-                                best_checkpoint_path,
-                                {
-                                    "generator": (
-                                        generator.module if distributed else generator
-                                    ).state_dict()
-                                },
-                            )
-                            logger.info("New best PESQ: %.3f, saved g_best", best_pesq)
+                            best_checkpoint_path = "{}/g_best".format(a.checkpoint_path)
+                            save_checkpoint(best_checkpoint_path,
+                                        {'generator': (generator.module if distributed else generator).state_dict()})
+                            logger.info('New best PESQ: %.3f, saved g_best', best_pesq)
 
                     generator.train()
 
@@ -440,29 +379,46 @@ def train(a, h):
             elapsed = int(time.time() - epoch_start)
             mins, secs = divmod(elapsed, 60)
             console.print(f"Epoch {epoch + 1} done in {mins}m{secs:02d}s | {desc}")
-            logger.info("Epoch %d done in %ds", epoch + 1, elapsed)
+            logger.info('Epoch %d done in %ds', epoch + 1, elapsed)
 
     async_pesq.shutdown()
 
 
 def main():
-    print("Initializing Training Process..")
+    print('Initializing Training Process..')
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--config", default="config.yaml")
+
+    parser.add_argument('--group_name', default=None)
+    parser.add_argument('--input_clean_wavs_dir', default='../../datasets/synthesized_dataset/gt')
+    parser.add_argument('--input_noisy_wavs_dir', default='../../datasets/synthesized_dataset/noisy')
+    parser.add_argument('--input_training_file', default='../../datasets/synthesized_dataset/train_index.csv')
+    parser.add_argument('--input_validation_file', default='../../datasets/synthesized_dataset/test_index.csv')
+    parser.add_argument('--checkpoint_path', default='cp_model')
+    parser.add_argument('--config', default='config.yaml')
+    parser.add_argument('--training_epochs', default=400, type=int)
+    parser.add_argument('--stdout_interval', default=250, type=int)
+    parser.add_argument('--checkpoint_interval', default=5000, type=int)
+    parser.add_argument('--summary_interval', default=10000000000, type=int)
+    parser.add_argument('--validation_interval', default=5000, type=int)
+    parser.add_argument('--best_checkpoint_start_epoch', default=40, type=int)
+
     a = parser.parse_args()
 
-    h = load_config(a.config)
+    with open(a.config) as f:
+        h = SimpleNamespace(**yaml.safe_load(f))
 
-    os.makedirs(h.checkpoint_path, exist_ok=True)
-    dest = os.path.join(h.checkpoint_path, "config.yaml")
+    os.makedirs(a.checkpoint_path, exist_ok=True)
+    dest = os.path.join(a.checkpoint_path, 'config.yaml')
     if a.config != dest:
         shutil.copyfile(a.config, dest)
 
-    set_seed(h.seed)
+    torch.manual_seed(h.seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(h.seed)
 
     train(a, h)
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
