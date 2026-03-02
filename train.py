@@ -15,7 +15,14 @@ from torch.utils.data import DataLoader, DistributedSampler
 from torch.utils.tensorboard import SummaryWriter
 from transformers import get_cosine_schedule_with_warmup
 
-from dataset import Dataset, get_dataset_filelist, mag_pha_istft, mag_pha_stft
+from dataset import (
+    Dataset,
+    DatasetCSV,
+    get_dataset_entries,
+    _infer_dataset_root,
+    mag_pha_istft,
+    mag_pha_stft,
+)
 from models.discriminator import AsyncPESQ, MetricDiscriminator
 from models.model import MPNet, pesq_score, phase_losses
 from utils import load_checkpoint, load_config, save_checkpoint, scan_checkpoint, set_seed
@@ -112,20 +119,34 @@ def train(a, h):
         scheduler_g.load_state_dict(state_dict_do["scheduler_g"])
         scheduler_d.load_state_dict(state_dict_do["scheduler_d"])
 
-    training_indexes, validation_indexes = get_dataset_filelist(h)
+    training_entries, validation_entries = get_dataset_entries(h)
 
-    trainset = Dataset(
-        training_indexes,
-        h.input_clean_wavs_dir,
-        h.input_noisy_wavs_dir,
-        h.segment_size,
-        h.sampling_rate,
-        split=True,
-        n_cache_reuse=0,
-        shuffle=not distributed,
-        device=device,
-        seed=h.seed,
-    )
+    if isinstance(training_entries[0], dict):  # CSV mode
+        dataset_root = _infer_dataset_root(h.input_clean_wavs_dir, h.input_noisy_wavs_dir)
+        trainset = DatasetCSV(
+            training_entries,
+            dataset_root=dataset_root,
+            segment_size=h.segment_size,
+            sampling_rate=h.sampling_rate,
+            split=True,
+            n_cache_reuse=0,
+            shuffle=not distributed,
+            device=device,
+            seed=h.seed,
+        )
+    else:  # TXT mode (for VB+Demand)
+        trainset = Dataset(
+            training_entries,
+            h.input_clean_wavs_dir,
+            h.input_noisy_wavs_dir,
+            h.segment_size,
+            h.sampling_rate,
+            split=True,
+            n_cache_reuse=0,
+            shuffle=not distributed,
+            device=device,
+            seed=h.seed,
+        )
 
     train_sampler = DistributedSampler(trainset) if distributed else None
 
@@ -141,17 +162,31 @@ def train(a, h):
         prefetch_factor=2,
     )
     if rank == 0:
-        validset = Dataset(
-            validation_indexes,
-            h.input_clean_wavs_dir,
-            h.input_noisy_wavs_dir,
-            h.segment_size,
-            h.sampling_rate,
-            split=False,
-            shuffle=False,
-            n_cache_reuse=0,
-            device=device,
-        )
+        if isinstance(validation_entries[0], dict):  # CSV mode
+            dataset_root = _infer_dataset_root(h.input_clean_wavs_dir, h.input_noisy_wavs_dir)
+            validset = DatasetCSV(
+                validation_entries,
+                dataset_root=dataset_root,
+                segment_size=h.segment_size,
+                sampling_rate=h.sampling_rate,
+                split=False,
+                shuffle=False,
+                n_cache_reuse=0,
+                device=device,
+                seed=h.seed,
+            )
+        else:
+            validset = Dataset(
+                validation_entries,
+                h.input_clean_wavs_dir,
+                h.input_noisy_wavs_dir,
+                h.segment_size,
+                h.sampling_rate,
+                split=False,
+                shuffle=False,
+                n_cache_reuse=0,
+                device=device,
+            )
 
         validation_loader = DataLoader(
             validset,
@@ -193,7 +228,11 @@ def train(a, h):
             task_id = progress.add_task("", total=len(train_loader))
 
         for _i, batch in enumerate(train_loader):
-            clean_audio, noisy_audio = batch
+            if len(batch) == 2:
+                clean_audio, noisy_audio = batch
+                meta = None
+            else:
+                clean_audio, noisy_audio, meta = batch  # meta unused for now
             clean_audio = clean_audio.to(device, non_blocking=True)
             noisy_audio = noisy_audio.to(device, non_blocking=True)
 
@@ -348,7 +387,11 @@ def train(a, h):
                     val_stft_err_tot = 0
                     with torch.no_grad():
                         for j, batch in enumerate(validation_loader):  # noqa: B007
-                            clean_audio, noisy_audio = batch
+                            if len(batch) == 2:
+                                clean_audio, noisy_audio = batch
+                                meta = None
+                            else:
+                                clean_audio, noisy_audio, meta = batch
                             clean_audio = clean_audio.to(device, non_blocking=True)
                             noisy_audio = noisy_audio.to(device, non_blocking=True)
 
