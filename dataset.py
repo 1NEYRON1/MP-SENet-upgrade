@@ -204,9 +204,10 @@ class DatasetCSV(torch.utils.data.Dataset):
         shuffle=True,
         n_cache_reuse=1,
         device=None,
+        seed=42
     ):
         self.entries = list(entries)
-        random.seed(1234)
+        random.seed(seed)
         if shuffle:
             random.shuffle(self.entries)
 
