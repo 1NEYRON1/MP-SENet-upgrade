@@ -39,19 +39,15 @@ data:
   n_fft: 400
   hop_size: 100
   win_size: 400
-<<<<<<< HEAD
-  num_workers: 4
-  data_type: flac
-=======
   num_workers: 30
->>>>>>> 72e10ff (add primeknet train)
+  data_type: flac
 
 paths:
-  checkpoint_path: primeknet
-  input_clean_wavs_dir: VoiceBank+DEMAND/wav_clean
-  input_noisy_wavs_dir: VoiceBank+DEMAND/wav_noisy
-  input_training_file: VoiceBank+DEMAND/training.txt
-  input_validation_file: VoiceBank+DEMAND/test.txt
+  checkpoint_path: primeknetх
+  input_clean_wavs_dir: /home2/kszolina/data/synthesized_dataset/flac_clean
+  input_noisy_wavs_dir: /home2/kszolina/data/synthesized_dataset/flac_noisy
+  input_training_file: /home2/kszolina/data/synthesized_dataset/training.txt
+  input_validation_file: /home2/kszolina/data/synthesized_dataset/test.txt
 
 reproducibility:
   seed: 1234
