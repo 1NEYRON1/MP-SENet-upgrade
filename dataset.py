@@ -70,12 +70,12 @@ class Dataset(torch.utils.data.Dataset):
         noisy_wavs_dir,
         segment_size,
         sampling_rate,
+        data_type,
         split=True,
         shuffle=True,
         n_cache_reuse=1,
         device=None,
         seed=None,
-        data_type='wav',
     ):
         self.audio_indexes = training_indexes
         if seed is not None:
@@ -86,13 +86,13 @@ class Dataset(torch.utils.data.Dataset):
         self.noisy_wavs_dir = noisy_wavs_dir
         self.segment_size = segment_size
         self.sampling_rate = sampling_rate
+        self.data_type = data_type
         self.split = split
         self.cached_clean_wav = None
         self.cached_noisy_wav = None
         self.n_cache_reuse = n_cache_reuse
         self._cache_ref_count = 0
         self.device = device
-        self.data_type = data_type
 
     def __getitem__(self, index):
         filename = self.audio_indexes[index]
