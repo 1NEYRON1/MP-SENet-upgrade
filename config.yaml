@@ -13,7 +13,7 @@ training:
   adam_b1: 0.8
   adam_b2: 0.99
   lr_decay: 0.99
-  batch_size: 8
+  batch_size: 4
   epochs: 400
   warmup_epochs: 10
   loss_weights:
@@ -43,7 +43,7 @@ data:
   data_type: flac
 
 paths:
-  checkpoint_path: primeknetх
+  checkpoint_path: primeknet_dns
   input_clean_wavs_dir: /home2/kszolina/data/synthesized_dataset/flac_clean
   input_noisy_wavs_dir: /home2/kszolina/data/synthesized_dataset/flac_noisy
   input_training_file: /home2/kszolina/data/synthesized_dataset/training.txt
