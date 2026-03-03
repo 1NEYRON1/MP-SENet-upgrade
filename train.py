@@ -81,7 +81,9 @@ def train(a, h):
     discriminator = torch.compile(discriminator)
 
     if distributed:
-        generator = DistributedDataParallel(generator, device_ids=[local_rank]).to(device)
+        generator = DistributedDataParallel(
+            generator, device_ids=[local_rank], find_unused_parameters=True
+        ).to(device)
         discriminator = DistributedDataParallel(discriminator, device_ids=[local_rank]).to(device)
 
     optim_g = torch.optim.AdamW(
@@ -207,6 +209,27 @@ def train(a, h):
             with autocast("cuda", dtype=torch.bfloat16):
                 mag_g, pha_g, com_g, moe_aux_loss = generator(noisy_mag, noisy_pha)
 
+            # NaN diagnostic — find exact origin and abort
+            if torch.isnan(mag_g).any():
+                if rank == 0:
+                    logger.error(
+                        "NaN in generator output at step %d. "
+                        "mag_g=%d pha_g=%d com_g=%d noisy_mag=%d noisy_pha=%d",
+                        steps,
+                        torch.isnan(mag_g).sum().item(),
+                        torch.isnan(pha_g).sum().item(),
+                        torch.isnan(com_g).sum().item(),
+                        torch.isnan(noisy_mag).any().item(),
+                        torch.isnan(noisy_pha).any().item(),
+                    )
+                    # Check which parameters have NaN weights
+                    base_gen = generator.module if distributed else generator
+                    base_gen = getattr(base_gen, "_orig_mod", base_gen)
+                    for name, p in base_gen.named_parameters():
+                        if torch.isnan(p).any():
+                            logger.error("  NaN weight: %s (%d NaNs)", name, torch.isnan(p).sum())
+                raise RuntimeError(f"NaN in generator output at step {steps}")
+
             audio_g = mag_pha_istft(
                 mag_g.float(), pha_g.float(), h.n_fft, h.hop_size, h.win_size, h.compress_factor
             )
@@ -235,6 +258,7 @@ def train(a, h):
 
                 loss_disc_all = loss_disc_r + loss_disc_g
             loss_disc_all.backward()
+            torch.nn.utils.clip_grad_norm_(discriminator.parameters(), max_norm=5.0)
             optim_d.step()
 
             # Generator
@@ -267,6 +291,7 @@ def train(a, h):
                 )
 
             loss_gen_all.backward()
+            torch.nn.utils.clip_grad_norm_(generator.parameters(), max_norm=5.0)
             optim_g.step()
 
             if rank == 0:
@@ -338,41 +363,38 @@ def train(a, h):
 
                     # MoE logging
                     moe_config = getattr(h, "moe", None)
-                    if moe_config and moe_config.get("enabled", False):
-                        base_gen = (
-                            generator.module._orig_mod if distributed else generator._orig_mod
-                        )
+                    if moe_config and moe_config.get("apply_to"):
+                        base_gen = generator.module if distributed else generator
+                        base_gen = getattr(base_gen, "_orig_mod", base_gen)
                         for layer_idx, tsc in enumerate(base_gen.TSTransformer):
                             for path_name, tfm in [
                                 ("time", tsc.time_transformer),
                                 ("freq", tsc.freq_transformer),
                             ]:
                                 ffn = tfm.ffn
-                                if hasattr(ffn, "_last_token_coverage"):
+                                if hasattr(ffn, "_last_gate_entropy"):
                                     prefix = f"MoE/Layer{layer_idx}_{path_name}"
-                                    if ffn._last_expert_counts is not None:
-                                        sw.add_histogram(
-                                            f"{prefix}/Expert_Counts",
-                                            ffn._last_expert_counts,
-                                            steps,
-                                        )
+                                    if ffn._last_gate_entropy is not None:
                                         sw.add_scalar(
-                                            f"{prefix}/Load_Std",
-                                            ffn._last_expert_counts.float().std().item(),
+                                            f"{prefix}/Gate_Entropy",
+                                            ffn._last_gate_entropy.item(),
                                             steps,
                                         )
-                                    if ffn._last_token_coverage is not None:
-                                        sw.add_scalar(
-                                            f"{prefix}/Token_Coverage",
-                                            ffn._last_token_coverage.item(),
-                                            steps,
-                                        )
-                                    if ffn._last_avg_experts_per_token is not None:
-                                        sw.add_scalar(
-                                            f"{prefix}/Avg_Experts",
-                                            ffn._last_avg_experts_per_token.item(),
-                                            steps,
-                                        )
+                                    if ffn._last_expert_load is not None:
+                                        for e_idx, load_val in enumerate(ffn._last_expert_load):
+                                            sw.add_scalar(
+                                                f"{prefix}/Expert{e_idx}_Load",
+                                                load_val.item(),
+                                                steps,
+                                            )
+                                    if hasattr(ffn, "expert_bias"):
+                                        for e_idx, bias_val in enumerate(ffn.expert_bias):
+                                            sw.add_scalar(
+                                                f"{prefix}/Expert{e_idx}_Bias",
+                                                bias_val.item(),
+                                                steps,
+                                            )
+                        sw.add_scalar("Training/MoE Aux Loss", moe_aux_loss.item(), steps)
 
                 # Validation
                 if steps % h.validation_interval == 0 and steps != 0:

@@ -7,12 +7,21 @@ model:
   compress_factor: 0.3
   disc_dim: 16
   disc_dropout: 0.3
+  moe:
+    apply_to: [0, 1]
+    num_experts: 4
+    top_k: 2
+    expert_ffn_dim: 256
+    balance_loss_weight: 0.01
+    z_loss_weight: 0.001
+    bias_update_speed: 0.001
+    noise_ctx_dim: 64
 
 training:
   learning_rate: 0.0005
   adam_b1: 0.8
   adam_b2: 0.99
-  batch_size: 12
+  batch_size: 2
   epochs: 400
   warmup_epochs: 10
   loss_weights:
@@ -27,8 +36,8 @@ training:
 intervals:
   stdout_interval: 5
   summary_interval: 50
-  checkpoint_interval: 1000
-  validation_interval: 1000
+  checkpoint_interval: 5000
+  validation_interval: 5000
   val_pesq_workers: 30
   best_checkpoint_start_epoch: 16
 
@@ -42,10 +51,10 @@ data:
 
 paths:
   checkpoint_path: cp_model
-  input_clean_wavs_dir: /work/VoiceBank+DEMAND/wav_clean
-  input_noisy_wavs_dir: /work/VoiceBank+DEMAND/wav_noisy
-  input_training_file: /work/VoiceBank+DEMAND/training.txt
-  input_validation_file: /work/VoiceBank+DEMAND/test.txt
+  input_clean_wavs_dir: /work/data/VoiceBank+DEMAND/wav_clean
+  input_noisy_wavs_dir: /work/data/VoiceBank+DEMAND/wav_noisy
+  input_training_file: /work/data/VoiceBank+DEMAND/training.txt
+  input_validation_file: /work/data/VoiceBank+DEMAND/test.txt
 
 reproducibility:
   seed: 1234

@@ -121,10 +121,9 @@ class PhaseDecoder(nn.Module):
 
 
 class TSTransformerBlock(nn.Module):
-    def __init__(self, h):
+    def __init__(self, h, moe_config=None):
         super().__init__()
         self.h = h
-        moe_config = getattr(h, "moe", None)
         self.time_transformer = TransformerBlock(
             d_model=h.dense_channel, n_heads=h.n_heads, moe_config=moe_config
         )
@@ -132,14 +131,25 @@ class TSTransformerBlock(nn.Module):
             d_model=h.dense_channel, n_heads=h.n_heads, moe_config=moe_config
         )
 
-    def forward(self, x):
+    def forward(self, x, noise_embed=None):
         b, c, t, f = x.size()
+
+        # Time path: noise_embed [B, D] → [B*F, D]
         x = x.permute(0, 3, 2, 1).contiguous().view(b * f, t, c)
-        x_out, aux_time = self.time_transformer(x)
+        ne_time = None
+        if noise_embed is not None:
+            ne_time = noise_embed.unsqueeze(1).expand(b, f, -1).contiguous().view(b * f, -1)
+        x_out, aux_time = self.time_transformer(x, noise_ctx=ne_time)
         x = x_out + x
+
+        # Freq path: noise_embed [B, D] → [B*T, D]
         x = x.view(b, f, t, c).permute(0, 2, 1, 3).contiguous().view(b * t, f, c)
-        x_out, aux_freq = self.freq_transformer(x)
+        ne_freq = None
+        if noise_embed is not None:
+            ne_freq = noise_embed.unsqueeze(1).expand(b, t, -1).contiguous().view(b * t, -1)
+        x_out, aux_freq = self.freq_transformer(x, noise_ctx=ne_freq)
         x = x_out + x
+
         x = x.view(b, t, f, c).permute(0, 3, 1, 2)
         return x, aux_time + aux_freq
 
@@ -151,20 +161,38 @@ class MPNet(nn.Module):
         self.num_tscblocks = h.num_tsblocks
         self.dense_encoder = DenseEncoder(h, in_channel=2)
 
-        self.TSTransformer = nn.ModuleList([])
-        for _i in range(h.num_tsblocks):
-            self.TSTransformer.append(TSTransformerBlock(h))
+        moe_cfg = getattr(h, "moe", None)
+        moe_layers = set(moe_cfg["apply_to"]) if moe_cfg else set()
+
+        self.TSTransformer = nn.ModuleList()
+        for i in range(h.num_tsblocks):
+            layer_moe = moe_cfg if i in moe_layers else None
+            self.TSTransformer.append(TSTransformerBlock(h, moe_config=layer_moe))
 
         self.mask_decoder = MaskDecoder(h, out_channel=1)
         self.phase_decoder = PhaseDecoder(h, out_channel=1)
 
+        # Noise-conditioned gate: project spectral magnitude to noise embedding
+        if moe_layers and moe_cfg.get("noise_ctx_dim", 0) > 0:
+            self.noise_proj = nn.Sequential(
+                nn.Linear(h.n_fft // 2 + 1, moe_cfg["noise_ctx_dim"]),
+                nn.GELU(),
+            )
+        else:
+            self.noise_proj = None
+
     def forward(self, noisy_amp, noisy_pha):  # [B, F, T]
+        # Compute noise embedding from spectral magnitude
+        noise_embed = None
+        if self.noise_proj is not None:
+            noise_embed = self.noise_proj(noisy_amp.mean(dim=2))  # [B, F] → [B, noise_ctx_dim]
+
         x = torch.stack((noisy_amp, noisy_pha), dim=-1).permute(0, 3, 2, 1)  # [B, 2, T, F]
         x = self.dense_encoder(x)
 
-        total_aux = torch.tensor(0.0, device=x.device)
+        total_aux = 0.0
         for i in range(self.num_tscblocks):
-            x, aux = self.TSTransformer[i](x)
+            x, aux = self.TSTransformer[i](x, noise_embed=noise_embed)
             total_aux = total_aux + aux
 
         denoised_amp = noisy_amp * self.mask_decoder(x)

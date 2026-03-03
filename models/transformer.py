@@ -1,4 +1,3 @@
-import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn import GRU, Dropout, LayerNorm, Linear, MultiheadAttention
@@ -34,15 +33,19 @@ class TransformerBlock(nn.Module):
 
         self.norm2 = LayerNorm(d_model)
 
-        self.use_moe = moe_config is not None and moe_config.get("enabled", False)
+        self.use_moe = moe_config is not None
         if self.use_moe:
             from models.moe import MoEFFN
 
             self.ffn = MoEFFN(
                 d_model=d_model,
-                num_experts=moe_config.get("num_experts", 8),
-                capacity_factor=moe_config.get("capacity_factor", 2.0),
-                expert_ffn_dim=moe_config.get("expert_ffn_dim", 128),
+                num_experts=moe_config.get("num_experts", 4),
+                top_k=moe_config.get("top_k", 2),
+                expert_ffn_dim=moe_config.get("expert_ffn_dim", 256),
+                balance_loss_weight=moe_config.get("balance_loss_weight", 0.01),
+                z_loss_weight=moe_config.get("z_loss_weight", 0.001),
+                bias_update_speed=moe_config.get("bias_update_speed", 0.001),
+                noise_ctx_dim=moe_config.get("noise_ctx_dim", 0),
                 bidirectional=bidirectional,
                 dropout=dropout,
             )
@@ -53,7 +56,7 @@ class TransformerBlock(nn.Module):
 
         self.norm3 = LayerNorm(d_model)
 
-    def forward(self, x, attn_mask=None, key_padding_mask=None):
+    def forward(self, x, noise_ctx=None, attn_mask=None, key_padding_mask=None):
         xt = self.norm1(x)
         xt, _ = self.attention(
             xt, xt, xt, attn_mask=attn_mask, key_padding_mask=key_padding_mask, need_weights=False
@@ -62,10 +65,10 @@ class TransformerBlock(nn.Module):
 
         xt = self.norm2(x)
         if self.use_moe:
-            xt, aux_loss = self.ffn(xt)
+            xt, aux_loss = self.ffn(xt, noise_ctx=noise_ctx)
         else:
             xt = self.ffn(xt)
-            aux_loss = torch.tensor(0.0, device=x.device)
+            aux_loss = 0.0
         x = x + self.dropout2(xt)
 
         x = self.norm3(x)
