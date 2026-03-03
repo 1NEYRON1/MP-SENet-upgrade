@@ -97,8 +97,8 @@ class Dataset(torch.utils.data.Dataset):
     def __getitem__(self, index):
         filename = self.audio_indexes[index]
         if self._cache_ref_count == 0:
-            clean_path = os.path.join(self.clean_wavs_dir, filename + "." + data_type)
-            noisy_path = os.path.join(self.noisy_wavs_dir, filename + "." + data_type)
+            clean_path = os.path.join(self.clean_wavs_dir, filename + "." + self.data_type)
+            noisy_path = os.path.join(self.noisy_wavs_dir, filename + "." + self.data_type)
             
             clean_audio = (
                 AudioDecoder(
