@@ -97,19 +97,6 @@ def train(a, h):
     if state_dict_do is not None:
         optim_g.load_state_dict(state_dict_do["optim_g"])
         optim_d.load_state_dict(state_dict_do["optim_d"])
-
-    # scheduler_g = get_cosine_schedule_with_warmup(
-    #     optim_g,
-    #     num_warmup_steps=h.warmup_epochs,
-    #     num_training_steps=h.epochs,
-    #     last_epoch=last_epoch,
-    # )
-    # scheduler_d = get_cosine_schedule_with_warmup(
-    #     optim_d,
-    #     num_warmup_steps=h.warmup_epochs,
-    #     num_training_steps=h.epochs,
-    #     last_epoch=last_epoch,
-    # )
     
     scheduler_g = torch.optim.lr_scheduler.ExponentialLR(optim_g, gamma=h.lr_decay, last_epoch=last_epoch)
     scheduler_d = torch.optim.lr_scheduler.ExponentialLR(optim_d, gamma=h.lr_decay, last_epoch=last_epoch)
