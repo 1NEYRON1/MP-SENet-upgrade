@@ -53,10 +53,14 @@ def mag_pha_istft(mag, pha, n_fft, hop_size, win_size, compress_factor=1.0, cent
 
 def get_dataset_filelist(a):
     with open(a.input_training_file, encoding="utf-8") as fi:
-        training_indexes = [x.split("|")[0] for x in fi.read().split("\n") if len(x) > 0]
+        training_indexes = [
+            os.path.basename(x.split("|")[1]) for x in fi.read().split("\n") if len(x) > 0
+        ]
 
     with open(a.input_validation_file, encoding="utf-8") as fi:
-        validation_indexes = [x.split("|")[0] for x in fi.read().split("\n") if len(x) > 0]
+        validation_indexes = [
+            os.path.basename(x.split("|")[1]) for x in fi.read().split("\n") if len(x) > 0
+        ]
 
     return training_indexes, validation_indexes
 
@@ -96,7 +100,7 @@ class Dataset(torch.utils.data.Dataset):
         if self._cache_ref_count == 0:
             clean_audio = (
                 AudioDecoder(
-                    os.path.join(self.clean_wavs_dir, filename + ".wav"),
+                    os.path.join(self.clean_wavs_dir, filename),
                     sample_rate=self.sampling_rate,
                     num_channels=1,
                 )
@@ -105,7 +109,7 @@ class Dataset(torch.utils.data.Dataset):
             )
             noisy_audio = (
                 AudioDecoder(
-                    os.path.join(self.noisy_wavs_dir, filename + ".wav"),
+                    os.path.join(self.noisy_wavs_dir, filename),
                     sample_rate=self.sampling_rate,
                     num_channels=1,
                 )

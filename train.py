@@ -116,6 +116,13 @@ def train(a, h):
 
     training_indexes, validation_indexes = get_dataset_filelist(h)
 
+    max_val = getattr(h, "max_validation_samples", None)
+    if max_val and len(validation_indexes) > max_val:
+        import random as _random
+
+        rng = _random.Random(h.seed)
+        validation_indexes = rng.sample(validation_indexes, max_val)
+
     trainset = Dataset(
         training_indexes,
         h.input_clean_wavs_dir,
