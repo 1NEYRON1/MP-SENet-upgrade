@@ -22,8 +22,8 @@ training:
   adam_b1: 0.8
   adam_b2: 0.99
   batch_size: 2
-  epochs: 400
-  warmup_epochs: 10
+  epochs: 25
+  warmup_epochs: 2
   loss_weights:
     mag: 0.9
     pha: 0.3
@@ -36,12 +36,13 @@ training:
 intervals:
   stdout_interval: 5
   summary_interval: 50
-  checkpoint_interval: 5000
-  validation_interval: 5000
+  checkpoint_interval: 100000
+  validation_interval: 7000
   val_pesq_workers: 30
-  best_checkpoint_start_epoch: 16
+  best_checkpoint_start_epoch: 3
 
 data:
+  max_validation_samples: 7000
   sampling_rate: 16000
   segment_size: 32000
   n_fft: 400
@@ -51,10 +52,10 @@ data:
 
 paths:
   checkpoint_path: cp_model
-  input_clean_wavs_dir: /work/data/VoiceBank+DEMAND/wav_clean
-  input_noisy_wavs_dir: /work/data/VoiceBank+DEMAND/wav_noisy
-  input_training_file: /work/data/VoiceBank+DEMAND/training.txt
-  input_validation_file: /work/data/VoiceBank+DEMAND/test.txt
+  input_clean_wavs_dir: /work/data/synthesized_dataset/flac_clean
+  input_noisy_wavs_dir: /work/data/synthesized_dataset/flac_noisy
+  input_training_file: /work/data/synthesized_dataset/training.txt
+  input_validation_file: /work/data/synthesized_dataset/test.txt
 
 reproducibility:
   seed: 1234
