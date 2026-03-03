@@ -5,6 +5,8 @@ import torch
 import torch.utils.data
 from torchcodec.decoders import AudioDecoder
 
+import soundfile as sf
+
 _hann_window_cache = {}
 
 
@@ -61,6 +63,7 @@ def get_dataset_filelist(a):
     return training_indexes, validation_indexes
 
 
+
 class Dataset(torch.utils.data.Dataset):
     def __init__(
         self,
@@ -74,6 +77,7 @@ class Dataset(torch.utils.data.Dataset):
         n_cache_reuse=1,
         device=None,
         seed=None,
+        data_type='wav',
     ):
         self.audio_indexes = training_indexes
         if seed is not None:
@@ -90,28 +94,40 @@ class Dataset(torch.utils.data.Dataset):
         self.n_cache_reuse = n_cache_reuse
         self._cache_ref_count = 0
         self.device = device
+        self.data_type = data_type
 
     def __getitem__(self, index):
         filename = self.audio_indexes[index]
         if self._cache_ref_count == 0:
-            clean_audio = (
-                AudioDecoder(
-                    os.path.join(self.clean_wavs_dir, filename + ".wav"),
-                    sample_rate=self.sampling_rate,
-                    num_channels=1,
+            if data_type == 'flac':
+                clean_path = os.path.join(self.clean_wavs_dir, filename + ".flac")
+                noisy_path = os.path.join(self.noisy_wavs_dir, filename + ".flac")
+                
+                clean_audio, sr1 = sf.read(clean_path)
+                noisy_audio, sr2 = sf.read(noisy_path)
+
+                clean_audio = torch.from_numpy(clean_audio).float()
+                noisy_audio = torch.from_numpy(noisy_audio).float()
+            else:
+                clean_audio = (
+                    AudioDecoder(
+                        os.path.join(self.clean_wavs_dir, filename + ".wav"),
+                        sample_rate=self.sampling_rate,
+                        num_channels=1,
+                    )
+                    .get_all_samples()
+                    .data.squeeze(0)
                 )
-                .get_all_samples()
-                .data.squeeze(0)
-            )
-            noisy_audio = (
-                AudioDecoder(
-                    os.path.join(self.noisy_wavs_dir, filename + ".wav"),
-                    sample_rate=self.sampling_rate,
-                    num_channels=1,
+                noisy_audio = (
+                    AudioDecoder(
+                        os.path.join(self.noisy_wavs_dir, filename + ".wav"),
+                        sample_rate=self.sampling_rate,
+                        num_channels=1,
+                    )
+                    .get_all_samples()
+                    .data.squeeze(0)
                 )
-                .get_all_samples()
-                .data.squeeze(0)
-            )
+                
             length = min(len(clean_audio), len(noisy_audio))
             clean_audio, noisy_audio = clean_audio[:length], noisy_audio[:length]
             self.cached_clean_wav = clean_audio

@@ -39,6 +39,7 @@ data:
   hop_size: 100
   win_size: 400
   num_workers: 4
+  data_type: flac
 
 paths:
   checkpoint_path: cp_model
