@@ -14,7 +14,7 @@ training:
   adam_b2: 0.99
   batch_size: 4
   epochs: 25
-  warmup_epochs: 2
+  warmup_steps: 200000
   loss_weights:
     mag: 0.9
     pha: 0.3

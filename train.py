@@ -95,23 +95,6 @@ def train(a, h):
         optim_g.load_state_dict(state_dict_do["optim_g"])
         optim_d.load_state_dict(state_dict_do["optim_d"])
 
-    scheduler_g = get_cosine_schedule_with_warmup(
-        optim_g,
-        num_warmup_steps=h.warmup_epochs,
-        num_training_steps=h.epochs,
-        last_epoch=last_epoch,
-    )
-    scheduler_d = get_cosine_schedule_with_warmup(
-        optim_d,
-        num_warmup_steps=h.warmup_epochs,
-        num_training_steps=h.epochs,
-        last_epoch=last_epoch,
-    )
-
-    if state_dict_do is not None:
-        scheduler_g.load_state_dict(state_dict_do["scheduler_g"])
-        scheduler_d.load_state_dict(state_dict_do["scheduler_d"])
-
     training_indexes, validation_indexes = get_dataset_filelist(h)
 
     max_val = getattr(h, "max_validation_samples", None)
@@ -147,6 +130,19 @@ def train(a, h):
         persistent_workers=True,
         prefetch_factor=2,
     )
+
+    steps_per_epoch = len(train_loader)
+    total_steps = h.epochs * steps_per_epoch
+    scheduler_g = get_cosine_schedule_with_warmup(
+        optim_g, num_warmup_steps=h.warmup_steps, num_training_steps=total_steps
+    )
+    scheduler_d = get_cosine_schedule_with_warmup(
+        optim_d, num_warmup_steps=h.warmup_steps, num_training_steps=total_steps
+    )
+    if state_dict_do is not None:
+        scheduler_g.load_state_dict(state_dict_do["scheduler_g"])
+        scheduler_d.load_state_dict(state_dict_do["scheduler_d"])
+
     if rank == 0:
         validset = Dataset(
             validation_indexes,
@@ -274,6 +270,9 @@ def train(a, h):
 
             loss_gen_all.backward()
             optim_g.step()
+
+            scheduler_g.step()
+            scheduler_d.step()
 
             if rank == 0:
                 progress.update(task_id, advance=1)
@@ -440,9 +439,6 @@ def train(a, h):
                     generator.train()
 
             steps += 1
-
-        scheduler_g.step()
-        scheduler_d.step()
 
         if rank == 0:
             progress.stop()
