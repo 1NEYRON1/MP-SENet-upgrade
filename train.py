@@ -125,6 +125,7 @@ def train(a, h):
         shuffle=not distributed,
         device=device,
         seed=h.seed,
+        data_type=h.data_type
     )
 
     train_sampler = DistributedSampler(trainset) if distributed else None

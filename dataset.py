@@ -61,6 +61,7 @@ def get_dataset_filelist(a):
     return training_indexes, validation_indexes
 
 
+
 class Dataset(torch.utils.data.Dataset):
     def __init__(
         self,
@@ -74,6 +75,7 @@ class Dataset(torch.utils.data.Dataset):
         n_cache_reuse=1,
         device=None,
         seed=None,
+        data_type='wav',
     ):
         self.audio_indexes = training_indexes
         if seed is not None:
@@ -90,13 +92,17 @@ class Dataset(torch.utils.data.Dataset):
         self.n_cache_reuse = n_cache_reuse
         self._cache_ref_count = 0
         self.device = device
+        self.data_type = data_type
 
     def __getitem__(self, index):
         filename = self.audio_indexes[index]
         if self._cache_ref_count == 0:
+            clean_path = os.path.join(self.clean_wavs_dir, filename + "." + data_type)
+            noisy_path = os.path.join(self.noisy_wavs_dir, filename + "." + data_type)
+            
             clean_audio = (
                 AudioDecoder(
-                    os.path.join(self.clean_wavs_dir, filename + ".wav"),
+                    clean_path,
                     sample_rate=self.sampling_rate,
                     num_channels=1,
                 )
@@ -105,13 +111,14 @@ class Dataset(torch.utils.data.Dataset):
             )
             noisy_audio = (
                 AudioDecoder(
-                    os.path.join(self.noisy_wavs_dir, filename + ".wav"),
+                    noisy_path,
                     sample_rate=self.sampling_rate,
                     num_channels=1,
                 )
                 .get_all_samples()
                 .data.squeeze(0)
             )
+                
             length = min(len(clean_audio), len(noisy_audio))
             clean_audio, noisy_audio = clean_audio[:length], noisy_audio[:length]
             self.cached_clean_wav = clean_audio
