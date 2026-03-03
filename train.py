@@ -152,6 +152,7 @@ def train(a, h):
             shuffle=False,
             n_cache_reuse=0,
             device=device,
+            data_type=h.data_type
         )
 
         validation_loader = DataLoader(
