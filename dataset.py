@@ -53,13 +53,16 @@ def mag_pha_istft(mag, pha, n_fft, hop_size, win_size, compress_factor=1.0, cent
 
 def get_dataset_filelist(a):
     with open(a.input_training_file, encoding="utf-8") as fi:
-        training_indexes = [x.split("|")[0] for x in fi.read().split("\n") if len(x) > 0]
+        training_indexes = [
+            os.path.basename(x.split("|")[1]) for x in fi.read().split("\n") if len(x) > 0
+        ]
 
     with open(a.input_validation_file, encoding="utf-8") as fi:
-        validation_indexes = [x.split("|")[0] for x in fi.read().split("\n") if len(x) > 0]
+        validation_indexes = [
+            os.path.basename(x.split("|")[1]) for x in fi.read().split("\n") if len(x) > 0
+        ]
 
     return training_indexes, validation_indexes
-
 
 
 class Dataset(torch.utils.data.Dataset):
@@ -70,7 +73,6 @@ class Dataset(torch.utils.data.Dataset):
         noisy_wavs_dir,
         segment_size,
         sampling_rate,
-        data_type,
         split=True,
         shuffle=True,
         n_cache_reuse=1,
@@ -86,7 +88,6 @@ class Dataset(torch.utils.data.Dataset):
         self.noisy_wavs_dir = noisy_wavs_dir
         self.segment_size = segment_size
         self.sampling_rate = sampling_rate
-        self.data_type = data_type
         self.split = split
         self.cached_clean_wav = None
         self.cached_noisy_wav = None
@@ -97,12 +98,9 @@ class Dataset(torch.utils.data.Dataset):
     def __getitem__(self, index):
         filename = self.audio_indexes[index]
         if self._cache_ref_count == 0:
-            clean_path = os.path.join(self.clean_wavs_dir, filename + "." + self.data_type)
-            noisy_path = os.path.join(self.noisy_wavs_dir, filename + "." + self.data_type)
-            
             clean_audio = (
                 AudioDecoder(
-                    clean_path,
+                    os.path.join(self.clean_wavs_dir, filename),
                     sample_rate=self.sampling_rate,
                     num_channels=1,
                 )
@@ -111,14 +109,13 @@ class Dataset(torch.utils.data.Dataset):
             )
             noisy_audio = (
                 AudioDecoder(
-                    noisy_path,
+                    os.path.join(self.noisy_wavs_dir, filename),
                     sample_rate=self.sampling_rate,
                     num_channels=1,
                 )
                 .get_all_samples()
                 .data.squeeze(0)
             )
-                
             length = min(len(clean_audio), len(noisy_audio))
             clean_audio, noisy_audio = clean_audio[:length], noisy_audio[:length]
             self.cached_clean_wav = clean_audio

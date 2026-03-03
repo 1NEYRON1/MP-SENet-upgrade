@@ -114,6 +114,13 @@ def train(a, h):
 
     training_indexes, validation_indexes = get_dataset_filelist(h)
 
+    max_val = getattr(h, "max_validation_samples", None)
+    if max_val and len(validation_indexes) > max_val:
+        import random as _random
+
+        rng = _random.Random(h.seed)
+        validation_indexes = rng.sample(validation_indexes, max_val)
+
     trainset = Dataset(
         training_indexes,
         h.input_clean_wavs_dir,
@@ -125,7 +132,6 @@ def train(a, h):
         shuffle=not distributed,
         device=device,
         seed=h.seed,
-        data_type=h.data_type
     )
 
     train_sampler = DistributedSampler(trainset) if distributed else None
@@ -152,7 +158,6 @@ def train(a, h):
             shuffle=False,
             n_cache_reuse=0,
             device=device,
-            data_type=h.data_type
         )
 
         validation_loader = DataLoader(
@@ -340,7 +345,9 @@ def train(a, h):
                 # Validation
                 if steps % h.validation_interval == 0 and steps != 0:
                     progress.update(task_id, description="[yellow]Validating...[/yellow]")
-                    val_task_id = progress.add_task("[yellow]Validation", total=len(validation_loader))
+                    val_task_id = progress.add_task(
+                        "[yellow]Validation", total=len(validation_loader)
+                    )
                     generator.eval()
                     torch.cuda.empty_cache()
                     audios_r, audios_g = [], []
