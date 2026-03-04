@@ -28,12 +28,13 @@ training:
 intervals:
   stdout_interval: 5
   summary_interval: 50
-  checkpoint_interval: 1000
-  validation_interval: 1000
+  checkpoint_interval: 100000
+  validation_interval: 100000
   val_pesq_workers: 30
-  best_checkpoint_start_epoch: 16
+  best_checkpoint_start_epoch: 3
 
 data:
+  max_validation_samples: 7000
   sampling_rate: 16000
   segment_size: 32000
   n_fft: 400

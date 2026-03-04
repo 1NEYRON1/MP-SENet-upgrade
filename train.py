@@ -81,7 +81,7 @@ def train(a, h):
         last_epoch = state_dict_do["epoch"]
 
     generator = torch.compile(generator, mode="reduce-overhead")
-    # discriminator = torch.compile(discriminator)
+    discriminator = torch.compile(discriminator)
 
     if distributed:
         generator = DistributedDataParallel(generator, device_ids=[local_rank]).to(device)
@@ -106,6 +106,13 @@ def train(a, h):
         scheduler_d.load_state_dict(state_dict_do["scheduler_d"])
 
     training_indexes, validation_indexes = get_dataset_filelist(h)
+    
+    max_val = getattr(h, "max_validation_samples", None)
+    if max_val and len(validation_indexes) > max_val:
+        import random as _random
+
+        rng = _random.Random(h.seed)
+        validation_indexes = rng.sample(validation_indexes, max_val)
 
     trainset = Dataset(
         training_indexes,
