@@ -8,13 +8,69 @@ model:
   disc_dim: 16
   disc_dropout: 0.3
 
+  # TS backbone variants
+  ts_block_type: hybrid                     # transformer | hybrid
+  hybrid_memory_kernel: 5
+  hybrid_dropout: 0.0
+
+  # MulCA-style feature emphasis
+  use_mulca: true
+  mulca_kernel_sizes: [3, 5, 9]
+  mulca_reduction: 4
+
+  # Phase-aware input / decoder modes
+  phase_input_feature_mode: mag_ri_gd_iaf   # baseline | mag_ri | mag_ri_gd_iaf
+  phase_decoder_mode: geometry              # absolute | residual | residual_blend | geometry | geometry_v2
+  phase_confidence_bias: 0.0
+  metric_feature_mode: mag_ri_gd_iaf        # mag | baseline | mag_ri | mag_ri_gd_iaf | generator
+
+  # Geometry decoder toggles
+  phase_geometry_num_candidates: 5
+  phase_geometry_anchor_mode: residual      # residual | absolute
+  phase_geometry_use_noisy_skip: true
+  phase_geometry_noisy_bias: 1.0            # initial preference for noisy-phase skip path
+
 training:
   learning_rate: 0.0005
   adam_b1: 0.8
   adam_b2: 0.99
   batch_size: 4
-  epochs: 25
-  warmup_steps: 200000
+  epochs: 400
+  warmup_epochs: 10
+  train_pesq_workers: 16
+
+  # 2-stage curriculum
+  curriculum_enabled: true
+  metric_warmup_steps: 20000
+  geometry_warmup_steps: 10000
+
+  # Magnitude-weighted phase losses
+  use_weighted_phase_loss: true
+  phase_loss_weight_power: 0.5
+  phase_loss_weight_floor: 0.05
+  phase_loss_weight_detach: true
+
+  # Legacy confidence supervision (used only for residual_blend)
+  phase_confidence_loss: 0.02
+  phase_confidence_target_power: 0.5
+
+  # Explicit phase-geometry supervision
+  phase_geometry_anchor_loss: 0.05
+  phase_geometry_gd_loss: 0.05
+  phase_geometry_iaf_loss: 0.05
+  phase_geometry_reliability_loss: 0.02
+  phase_geometry_reliability_temperature: 0.35
+  phase_geometry_consistency_loss: 0.02
+  phase_geometry_sparse_loss: 0.005
+  phase_geometry_sparse_power: 1.0
+
+  # Runtime stability for dynamic validation utterances
+  val_pesq_fallback_sequential: true
+  compile_enabled: true
+  compile_mode: reduce-overhead
+  compile_validation: false
+  compile_skip_dynamic_cudagraphs: true
+
   loss_weights:
     mag: 0.9
     pha: 0.3
@@ -22,15 +78,16 @@ training:
     stft: 0.1
     metric: 0.05
     time: 0.2
-  train_pesq_workers: 16
 
 intervals:
-  stdout_interval: 5
-  summary_interval: 50
-  checkpoint_interval: 100000
-  validation_interval: 100000
-  val_pesq_workers: 30
-  best_checkpoint_start_epoch: 3
+  stdout_interval: 250
+  summary_interval: 50000000
+  checkpoint_interval: 2500
+  validation_interval: 2500
+  val_pesq_workers: 6
+  quick_val_subset_size: 200
+  full_val_interval: 20000
+  best_checkpoint_start_epoch: 20
 
 data:
   sampling_rate: 16000
@@ -39,14 +96,13 @@ data:
   hop_size: 100
   win_size: 400
   num_workers: 4
-  max_validation_samples: 7000
 
 paths:
-  checkpoint_path: cp_model
-  input_clean_wavs_dir: /work/data/synthesized_dataset/flac_clean
-  input_noisy_wavs_dir: /work/data/synthesized_dataset/flac_noisy
-  input_training_file: /work/data/synthesized_dataset/training.txt
-  input_validation_file: /work/data/synthesized_dataset/test.txt
+  checkpoint_path: cp_model_params_phase_geometry_decoder
+  input_clean_wavs_dir: ../../datasets/VoiceBank+DEMAND/wav_clean
+  input_noisy_wavs_dir: ../../datasets/VoiceBank+DEMAND/wav_noisy
+  input_training_file: ../../datasets/VoiceBank+DEMAND/training.txt
+  input_validation_file: ../../datasets/VoiceBank+DEMAND/test.txt
 
 reproducibility:
-  seed: 1234
+  seed: 42
