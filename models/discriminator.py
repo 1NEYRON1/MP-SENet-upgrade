@@ -13,7 +13,6 @@ def cal_pesq(clean, noisy, sr=16000):
     try:
         pesq_score = pesq(sr, clean, noisy, "wb")
     except Exception:
-        # error can happen due to silent period
         pesq_score = -1
     return pesq_score
 
@@ -44,14 +43,23 @@ class MetricDiscriminator(nn.Module):
         )
 
     def forward(self, x, y):
-        xy = torch.stack((x, y), dim=1)
+        if x.dim() == 3:
+            x = x.unsqueeze(1)
+        if y.dim() == 3:
+            y = y.unsqueeze(1)
+        xy = torch.cat((x, y), dim=1)
         return self.layers(xy)
 
 
 class AsyncPESQ:
     def __init__(self, max_workers=4):
-        self.executor = ProcessPoolExecutor(max_workers=max_workers)
+        self.max_workers = max(1, int(max_workers))
+        self.executor = ProcessPoolExecutor(max_workers=self.max_workers)
         self._futures = None
+
+    def _reset_executor(self):
+        self.executor.shutdown(wait=False, cancel_futures=True)
+        self.executor = ProcessPoolExecutor(max_workers=self.max_workers)
 
     def submit(self, clean_list, noisy_list, sr=16000):
         self._futures = [
@@ -62,11 +70,16 @@ class AsyncPESQ:
     def collect(self):
         if self._futures is None:
             return None
-        scores = np.array([f.result() for f in self._futures])
-        self._futures = None
-        if -1 in scores:
+        try:
+            scores = np.array([f.result() for f in self._futures])
+            self._futures = None
+            if -1 in scores:
+                return None
+            return torch.FloatTensor((scores - 1) / 3.5)
+        except Exception:
+            self._futures = None
+            self._reset_executor()
             return None
-        return torch.FloatTensor((scores - 1) / 3.5)
 
     def shutdown(self):
-        self.executor.shutdown(wait=True)
+        self.executor.shutdown(wait=True, cancel_futures=True)
